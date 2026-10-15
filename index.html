@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explora el algoritmo de Dijkstra y encuentra rutas óptimas en grafos interactivos.">
+  <title>Dijkstra paso a paso</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Dijkstra paso a paso</h1>
+    <p>Encuentra la ruta más corta entre dos puntos, como lo hace un mapa.</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="controles">
+        <label>Mapa <select id="grafo"></select></label>
+        <label>Modo <select id="modo">
+          <option value="desafio">1. Encuentra la ruta</option>
+          <option value="predecir">2. Predecir el siguiente</option>
+          <option value="observar">3. Ruta óptima (observar Dijkstra)</option>
+        </select></label>
+        <label>Origen <select id="origen"></select></label>
+        <label>Destino <select id="destino"></select></label>
+      </div>
+      <div class="controles">
+        <button id="btnPaso">Siguiente paso</button>
+        <button id="btnAuto" class="sec">Reproducir</button>
+        <label class="control-velocidad" for="velocidad">
+          Velocidad del recorrido (100 ms = más rápido)
+          <span class="velocidad-fila">
+            <input id="velocidad" type="range" min="100" max="2000" step="100" value="100">
+            <output id="valorVelocidad" for="velocidad">100 ms</output>
+          </span>
+        </label>
+        <label class="control-instantaneo" for="instantaneo">
+          <input id="instantaneo" type="checkbox">
+          Instantáneo
+        </label>
+        <button id="btnComprobar" hidden>Comprobar mi ruta</button>
+        <button id="btnSolucion" class="sec" hidden>Ver solución</button>
+        <button id="btnSorteo" class="sec">Sortear origen y destino</button>
+        <button id="btnGirar" class="sec" hidden>Girar mapa 90°</button>
+        <button id="btnReiniciar" class="sec">Reiniciar</button>
+        <strong id="marcador" aria-live="polite"></strong>
+      </div>
+      <svg id="mapa" viewBox="0 0 700 420" role="group" aria-label="Mapa interactivo. Hay una versión en texto debajo."></svg>
+
+      <div class="leyenda">
+        <span><i class="c-normal"></i>Sin visitar</span>
+        <span><i class="c-actual"></i>Nodo actual (★)</span>
+        <span><i class="c-visitado"></i>Visitado (✓)</span>
+        <span><i class="c-ruta"></i>Ruta óptima</span>
+      </div>
+    </section>
+
+    <aside class="panel panel-lateral">
+      <h2>Qué está pasando</h2>
+      <p id="explicacion" aria-live="polite"></p>
+      <div id="bloqueTabla">
+        <h2>Distancias</h2>
+        <div class="tabla-scroll" tabindex="0" aria-label="Tabla de distancias; desplázate para ver todos los nodos">
+          <table>
+            <thead><tr><th>Nodo</th><th>Distancia</th><th>Viene de</th></tr></thead>
+            <tbody id="tabla"></tbody>
+          </table>
+        </div>
+      </div>
+      <details id="texto">
+        <summary>Versión en texto del mapa</summary>
+        <div class="lista-scroll">
+          <ul id="listaCalles"></ul>
+        </div>
+      </details>
+    </aside>
+  </main>
+
+  <noscript>Esta actividad necesita JavaScript para funcionar.</noscript>
+  <script src="script.js"></script>
+</body>
+</html>

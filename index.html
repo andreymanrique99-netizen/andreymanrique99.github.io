@@ -1,60 +1,83 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mesa de Poker · Texas Hold'em</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=DM+Sans:wght@400;500;700&display=swap">
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explora el algoritmo de Dijkstra y encuentra rutas óptimas en grafos interactivos.">
+  <title>Dijkstra paso a paso</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <header>
+    <h1>Dijkstra paso a paso</h1>
+    <p>Encuentra la ruta más corta entre dos puntos, como lo hace un mapa.</p>
+  </header>
 
-<!-- 1. Encabezado -->
-<header class="cabecera">
-  <h1>Mesa de Poker</h1>
-  <p class="sub">Texas Hold'em: 2 cartas por jugador, flop, turn y river.</p>
-</header>
+  <main>
+    <section class="panel">
+      <div class="controles">
+        <label>Mapa <select id="grafo"></select></label>
+        <label>Modo <select id="modo">
+          <option value="desafio">1. Encuentra la ruta</option>
+          <option value="predecir">2. Predecir el siguiente</option>
+          <option value="observar">3. Ruta óptima (observar Dijkstra)</option>
+        </select></label>
+        <label>Origen <select id="origen"></select></label>
+        <label>Destino <select id="destino"></select></label>
+      </div>
+      <div class="controles">
+        <button id="btnPaso">Siguiente paso</button>
+        <button id="btnAuto" class="sec">Reproducir</button>
+        <label class="control-velocidad" for="velocidad">
+          Velocidad del recorrido (100 ms = más rápido)
+          <span class="velocidad-fila">
+            <input id="velocidad" type="range" min="100" max="2000" step="100" value="100">
+            <output id="valorVelocidad" for="velocidad">100 ms</output>
+          </span>
+        </label>
+        <label class="control-instantaneo" for="instantaneo">
+          <input id="instantaneo" type="checkbox">
+          Instantáneo
+        </label>
+        <button id="btnComprobar" hidden>Comprobar mi ruta</button>
+        <button id="btnSolucion" class="sec" hidden>Ver solución</button>
+        <button id="btnSorteo" class="sec">Sortear origen y destino</button>
+        <button id="btnGirar" class="sec" hidden>Girar mapa 90°</button>
+        <button id="btnReiniciar" class="sec">Reiniciar</button>
+        <strong id="marcador" aria-live="polite"></strong>
+      </div>
+      <svg id="mapa" viewBox="0 0 700 420" role="group" aria-label="Mapa interactivo. Hay una versión en texto debajo."></svg>
 
-<!-- 2. Controles -->
-<div class="barra">
-  <label>Jugadores
-    <select id="njug" aria-label="Cantidad de jugadores">
-      <option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option><option>8</option>
-    </select>
-  </label>
-  <button id="btnSig">Repartir cartas</button>
-  <button id="btnTodo" class="sec">Jugar hasta el final</button>
-</div>
+      <div class="leyenda">
+        <span><i class="c-normal"></i>Sin visitar</span>
+        <span><i class="c-actual"></i>Nodo actual (★)</span>
+        <span><i class="c-visitado"></i>Visitado (✓)</span>
+        <span><i class="c-ruta"></i>Ruta óptima</span>
+      </div>
+    </section>
 
-<!-- 3. Mesa y resultado -->
-<main class="juego">
-  <div class="mesa" id="mesa">
-    <div class="centro">
-      <div class="etapa" id="etapa">Baraja lista</div>
-      <div class="board" id="board"></div>
-    </div>
-  </div>
-  <div class="aviso" id="aviso" aria-live="polite"></div>
-</main>
+    <aside class="panel panel-lateral">
+      <h2>Qué está pasando</h2>
+      <p id="explicacion" aria-live="polite"></p>
+      <div id="bloqueTabla">
+        <h2>Distancias</h2>
+        <div class="tabla-scroll" tabindex="0" aria-label="Tabla de distancias; desplázate para ver todos los nodos">
+          <table>
+            <thead><tr><th>Nodo</th><th>Distancia</th><th>Viene de</th></tr></thead>
+            <tbody id="tabla"></tbody>
+          </table>
+        </div>
+      </div>
+      <details id="texto">
+        <summary>Versión en texto del mapa</summary>
+        <div class="lista-scroll">
+          <ul id="listaCalles"></ul>
+        </div>
+      </details>
+    </aside>
+  </main>
 
-<!-- 4. Paneles de análisis -->
-<div class="paneles">
-  <section class="outs" aria-label="Por qué una mano es mejor o peor">
-    <h2>Por qué una mano es mejor o peor</h2>
-    <p>Las manos de mejor a peor con las cartas de la mesa, sus 5 mejores cartas y la razón. Antes del river es provisional.</p>
-    <div id="rankLista"></div>
-  </section>
-
-  <section class="outs" aria-label="Cartas que dan la victoria">
-    <h2>Cartas que dan la victoria</h2>
-    <p>Cartas que quedan en la baraja y harían ganar a cada jugador si salen. Pasa el dedo o el mouse por encima para verlas nítidas.</p>
-    <div id="outsLista"></div>
-  </section>
-</div>
-
-<!-- 5. Pie -->
-<p class="nota">El % bajo cada jugador es su probabilidad de ganar, calculada con 3000 simulaciones de las cartas que faltan.</p>
-
-<script src="script.js"></script>
+  <noscript>Esta actividad necesita JavaScript para funcionar.</noscript>
+  <script src="script.js"></script>
 </body>
 </html>

@@ -1,306 +1,819 @@
-/* =====================================================================
-   MESA DE POKER · TEXAS HOLD'EM
-   Orden del archivo:
-   1. Constantes   2. Estado   3. Baraja   4. Evaluación de manos
-   5. Explicaciones   6. Simulaciones   7. Vista (DOM)   8. Flujo   9. Inicio
-   ===================================================================== */
+// =====================================================================
+//  DIJKSTRA PASO A PASO  (versión sencilla)
+//
+//  Vocabulario:
+//    NODO   = un punto del mapa (una esquina, una plaza...)
+//    ARISTA = una calle que une dos nodos; su número es la distancia
+//
+//  Idea de Dijkstra:
+//    1. El origen está a distancia 0; todos los demás a "infinito".
+//    2. Visitamos el nodo pendiente con MENOR distancia.
+//    3. Por cada calle de ese nodo, vemos si llegar a su vecino
+//       pasando por aquí es más corto que lo que sabíamos.
+//    4. Repetimos hasta visitar el destino.
+//
+//  El archivo se lee de arriba hacia abajo:
+//    1. Mapas   2. Variables   3. Algoritmo   4. Clics
+//    5. Dibujo  6. Botones
+// =====================================================================
 
-/* ---------- 1. CONSTANTES ---------- */
-const PALOS   = ["♠","♥","♦","♣"];
-const VALORES = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
-const RANGO   = Object.fromEntries(VALORES.map((v,i)=>[v,i+2]));
-const NOMBRES = ["Carta alta","Pareja","Doble pareja","Trío","Escalera","Color","Full house","Póker","Escalera de color"];
-const ETAPAS  = ["Preflop","Flop","Turn","River"];
-const SIMULACIONES = 3000;
-// Cuántos valores "principales" definen cada jugada antes de los kickers
-const PRINCIPALES = [0,1,2,1,1,0,2,1,1];
 
-/* ---------- 2. ESTADO ---------- */
-const E = { baraja:[], manos:[], mesa:[], etapa:-1, n:4, ocupado:false };
-const $ = id => document.getElementById(id);
-const nv = r => VALORES[r-2];   // rango numérico -> símbolo
+// ---------------------------------------------------------------------
+// 1. MAPAS
+// Cada mapa tiene: nodos {id: {x, y}} y calles [nodo1, nodo2, distancia].
+// Si una calle no trae distancia, se calcula con lo que mide en el dibujo.
+// ---------------------------------------------------------------------
 
-/* ---------- 3. BARAJA ---------- */
-function crearBaraja(){
-  const b = PALOS.flatMap(p => VALORES.map(v => [v,p]));
-  for(let i=b.length-1;i>0;i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [b[i],b[j]] = [b[j],b[i]];
-  }
-  return b;
-}
-const repartirCarta = () => E.baraja.pop();
-
-/* ---------- 4. EVALUACIÓN DE MANOS ---------- */
-// Puntaje = [categoría, ...desempates]. Se comparan elemento a elemento.
-function evaluar5(c){
-  const val   = c.map(x=>RANGO[x[0]]).sort((a,b)=>b-a);
-  const color = new Set(c.map(x=>x[1])).size === 1;
-  const uni   = [...new Set(val)];
-  let esc=false, alta=0;
-  if(uni.length===5){
-    if(uni[0]-uni[4]===4){ esc=true; alta=uni[0]; }
-    else if(uni.join()==="14,5,4,3,2"){ esc=true; alta=5; }   // rueda A-2-3-4-5
-  }
-  const cnt = {}; val.forEach(v=>cnt[v]=(cnt[v]||0)+1);
-  const g = Object.entries(cnt).map(([v,k])=>[+v,k]).sort((a,b)=>b[1]-a[1]||b[0]-a[0]);
-  const orden = g.map(x=>x[0]), q = g.map(x=>x[1]).join("");
-
-  if(esc&&color) return [8,alta];
-  if(q==="41")   return [7,...orden];
-  if(q==="32")   return [6,...orden];
-  if(color)      return [5,...val];
-  if(esc)        return [4,alta];
-  if(q==="311")  return [3,...orden];
-  if(q==="221")  return [2,...orden];
-  if(q==="2111") return [1,...orden];
-  return [0,...val];
+// Números "al azar" que siempre dan lo mismo con la misma semilla
+// (así cada ciudad sale igual cada vez que abres la página).
+function crearAzar(semilla) {
+  let s = semilla;
+  return function () {
+    s = (s * 1664525 + 1013904223) % 4294967296;
+    return s / 4294967296;
+  };
 }
 
-function cmp(a,b){
-  for(let i=0;i<Math.max(a.length,b.length);i++){
-    const d=(a[i]||0)-(b[i]||0); if(d) return d;
-  }
-  return 0;
-}
-
-// Combinaciones de 5 sobre `len` cartas, calculadas una sola vez por tamaño
-const _combos = {};
-function indicesCombos(len){
-  if(_combos[len]) return _combos[len];
-  const out=[], act=[];
-  (function rec(ini){
-    if(act.length===5){ out.push(act.slice()); return; }
-    for(let i=ini;i<len;i++){ act.push(i); rec(i+1); act.pop(); }
-  })(0);
-  return _combos[len]=out;
-}
-
-// Mejor mano de 5 entre 5, 6 o 7 cartas -> { score, cartas }
-function mejorMano(cartas){
-  let best=null;
-  for(const idx of indicesCombos(cartas.length)){
-    const sub = idx.map(i=>cartas[i]), s = evaluar5(sub);
-    if(!best || cmp(s,best.score)>0) best={score:s, cartas:sub};
-  }
-  return best;
-}
-const mejor = cartas => mejorMano(cartas).score;
-
-// Índices de los jugadores con el puntaje más alto (puede haber empate)
-function ganadores(pts){
-  let mx=pts[0]; pts.forEach(p=>{ if(cmp(p,mx)>0) mx=p; });
-  return { mx, gan: pts.flatMap((p,i)=>cmp(p,mx)===0?[i]:[]) };
-}
-
-/* ---------- 5. EXPLICACIONES ---------- */
-// "Pareja de 8", "Escalera hasta 9", etc.
-function describir(s){
-  const [c,a,b] = s;
-  switch(c){
-    case 0: return `Carta alta ${nv(a)}`;
-    case 1: return `Pareja de ${nv(a)}`;
-    case 2: return `Doble pareja de ${nv(a)} y ${nv(b)}`;
-    case 3: return `Trío de ${nv(a)}`;
-    case 4: return `Escalera hasta ${nv(a)}`;
-    case 5: return `Color con ${nv(a)} alta`;
-    case 6: return `Full de ${nv(a)} con ${nv(b)}`;
-    case 7: return `Póker de ${nv(a)}`;
-    default: return `Escalera de color hasta ${nv(a)}`;
-  }
-}
-
-// Por qué `gana` supera a `pierde`
-function porQue(pierde,gana){
-  if(pierde[0]!==gana[0])
-    return `${NOMBRES[gana[0]]} vale más que ${NOMBRES[pierde[0]]}.`;
-  let i=1; while(i<gana.length && pierde[i]===gana[i]) i++;
-  if(i>=gana.length) return "Tienen exactamente la misma jugada: se reparten el bote.";
-  const cat=gana[0], vs=`${nv(gana[i])} contra ${nv(pierde[i])}`;
-  if(cat===0||cat===5)
-    return `Misma jugada, pero decide la carta más alta: ${vs}.`;
-  if(i<=PRINCIPALES[cat])
-    return `Misma categoría, pero ${describir(gana)} es más alta que ${describir(pierde)}.`;
-  return `Misma jugada; desempata la carta de acompañamiento (kicker): ${vs}.`;
-}
-
-/* ---------- 6. SIMULACIONES ---------- */
-// Probabilidad de ganar de cada jugador (Monte Carlo), en %
-function probabilidades(sims=SIMULACIONES){
-  const faltan=5-E.mesa.length, v=new Array(E.n).fill(0), resto=E.baraja.slice();
-  for(let s=0;s<sims;s++){
-    for(let i=0;i<faltan;i++){
-      const j=i+Math.floor(Math.random()*(resto.length-i));
-      [resto[i],resto[j]]=[resto[j],resto[i]];
+// Ciudad en cuadrícula de 3 filas x 4 columnas, con diagonales
+function crearCuadricula() {
+  const nodos = {};
+  const calles = [];
+  for (let fila = 0; fila < 3; fila++) {
+    for (let col = 0; col < 4; col++) {
+      const id = '' + fila + col;
+      nodos[id] = { x: 100 + col * 165, y: 70 + fila * 140 };
+      if (col < 3) calles.push([id, '' + fila + (col + 1), (fila * 3 + col * 5) % 6 + 2]);
+      if (fila < 2) calles.push([id, '' + (fila + 1) + col, (fila * 5 + col * 3) % 6 + 2]);
     }
-    const m=E.mesa.concat(resto.slice(0,faltan));
-    const {gan}=ganadores(E.manos.map(h=>mejor(h.concat(m))));
-    gan.forEach(i=>v[i]+=1/gan.length);
   }
-  return v.map(x=>x/sims*100);
-}
-
-// Cartas de la baraja que harían ganar a cada jugador si salen
-function calcularOuts(K=24){
-  const faltan=5-E.mesa.length;
-  if(E.mesa.length<3||faltan<=0) return null;
-  const res=E.manos.map(()=>[]);
-  E.baraja.forEach((c,ci)=>{
-    const resto=E.baraja.filter((_,k)=>k!==ci), v=new Array(E.n).fill(0);
-    const finales = faltan===1 ? [[]]
-      : Array.from({length:K},()=>[resto[Math.floor(Math.random()*resto.length)]]);
-    for(const f of finales){
-      const m=E.mesa.concat([c],f);
-      const {gan}=ganadores(E.manos.map(h=>mejor(h.concat(m))));
-      gan.forEach(i=>v[i]+=1/gan.length);
+  // Una diagonal por manzana (alternadas, para que no se crucen)
+  for (let fila = 0; fila < 2; fila++) {
+    for (let col = 0; col < 3; col++) {
+      const peso = (fila * 4 + col * 3) % 5 + 3;
+      if ((fila + col) % 2 === 0) calles.push(['' + fila + col, '' + (fila + 1) + (col + 1), peso]);
+      else calles.push(['' + fila + (col + 1), '' + (fila + 1) + col, peso]);
     }
-    v.forEach((x,i)=>res[i].push({c,p:x/finales.length}));
-  });
-  return res;
-}
-
-/* ---------- 7. VISTA (DOM) ---------- */
-function htmlCarta(c,nueva){
-  const rojo=(c[1]==="♥"||c[1]==="♦")?" rojo":"";
-  return `<div class="carta${rojo}${nueva?" nueva":""}"><span>${c[0]}</span><small>${c[1]}</small></div>`;
-}
-
-function dibujarAsientos(){
-  document.querySelectorAll(".asiento").forEach(e=>e.remove());
-  for(let i=0;i<E.n;i++){
-    const ang=Math.PI/2+i*2*Math.PI/E.n;
-    const d=document.createElement("div");
-    d.className="asiento"; d.id="as"+i;
-    d.style.left=(50+43*Math.cos(ang))+"%";
-    d.style.top =(50+43*Math.sin(ang))+"%";
-    d.innerHTML=`<div class="nombre">Jugador ${i+1}</div>
-      <div class="mano">${E.manos[i].map(c=>htmlCarta(c,true)).join("")}</div>
-      <div class="jugada" id="ju${i}"></div>
-      <div class="pct" id="pc${i}">--</div>
-      <div class="prob"><i id="br${i}"></i></div>`;
-    $("mesa").appendChild(d);
   }
+  return { titulo: 'Ciudad en cuadrícula', r: 22, origen: '00', destino: '23', nodos: nodos, calles: calles };
 }
 
-function dibujarMesa(previas){
-  $("board").innerHTML=Array.from({length:5},(_,i)=>
-    E.mesa[i]?htmlCarta(E.mesa[i],i>=previas):'<div class="hueco"></div>').join("");
-  $("etapa").textContent=E.etapa<0?"Baraja lista":ETAPAS[E.etapa];
+// Ciudad aleatoria de n nodos: una cuadrícula irregular, como las calles de un barrio.
+function crearCiudad(n, semilla) {
+  const azar = crearAzar(semilla);
+  const separacion = 100;
+  const columnas = Math.ceil(Math.sqrt(n * 1.8));
+  const conHuecos = n >= 20;          // en ciudades medianas y grandes hay solares vacíos
+  const nodos = {};
+  const calles = [];
+  const celdas = {};                  // 'fila,columna' -> id del nodo que hay ahí
+  const posicion = {};                // id -> { fila, col }
+
+  // 1. Nodos: cada fila un poco corrida y cada nodo movido al azar,
+  //    para que las calles no queden perfectamente rectas.
+  let id = 0;
+  for (let k = 0; id < n; k++) {
+    const fila = Math.floor(k / columnas);
+    const col = k % columnas;
+    if (conHuecos && azar() < 0.15) continue;      // solar vacío: deja un hueco
+    id++;
+    nodos[id] = {
+      x: Math.round(col * separacion + (fila % 2) * separacion * 0.22 + (azar() - 0.5) * separacion * 0.55),
+      y: Math.round(fila * separacion + (azar() - 0.5) * separacion * 0.55)
+    };
+    celdas[fila + ',' + col] = String(id);
+    posicion[id] = { fila: fila, col: col };
+  }
+
+  function nodoEn(fila, col) { return celdas[fila + ',' + col] || null; }
+
+  // 2. Calles. Si hay un hueco, la calle sigue de largo hasta el siguiente nodo.
+  let ultimaFila = 0;
+  Object.keys(nodos).forEach(function (a) {
+    ultimaFila = Math.max(ultimaFila, posicion[a].fila);
+    const fila = posicion[a].fila, col = posicion[a].col;
+    let derecha = nodoEn(fila, col + 1);
+    if (!derecha && azar() < 0.95) derecha = nodoEn(fila, col + 2);
+    let abajo = nodoEn(fila + 1, col);
+    // Para que no se crucen, solo se salta un hueco hacia abajo si no lo cruza una calle horizontal
+    const lo_cruza = nodoEn(fila + 1, col - 1) && nodoEn(fila + 1, col + 1);
+    if (!abajo && !lo_cruza && azar() < 0.95) abajo = nodoEn(fila + 2, col);
+
+    if (derecha) calles.push([a, derecha]);
+    if (abajo && (azar() < 0.96 || n <= 20)) calles.push([a, abajo]);
+  });
+
+  // Diagonales: una por manzana (alternadas para que no se crucen).
+  // Si a la manzana le falta una esquina, se usa la diagonal que no la toca.
+  for (let fila = 0; fila <= ultimaFila; fila++) {
+    for (let col = 0; col < columnas - 1; col++) {
+      const A = nodoEn(fila, col), B = nodoEn(fila, col + 1);
+      const C = nodoEn(fila + 1, col), D = nodoEn(fila + 1, col + 1);
+      const esquinas = [A, B, C, D].filter(Boolean).length;
+      if (esquinas < 3 || !(n <= 20 || azar() < 0.95)) continue;
+      if (esquinas === 4) {
+        if ((fila + col) % 2 === 0) calles.push([A, D]);
+        else calles.push([B, C]);
+      } else if (!D || !A) calles.push([B, C]);
+      else calles.push([A, D]);
+    }
+  }
+
+  // 3. Si por los huecos quedó alguna zona separada del resto, se une al nodo más cercano.
+  const raiz = {};
+  Object.keys(nodos).forEach(function (x) { raiz[x] = x; });
+  function buscar(x) { while (raiz[x] !== x) { raiz[x] = raiz[raiz[x]]; x = raiz[x]; } return x; }
+  calles.forEach(function (c) { raiz[buscar(c[0])] = buscar(c[1]); });
+  while (true) {
+    const grupos = {};
+    Object.keys(nodos).forEach(function (x) { (grupos[buscar(x)] = grupos[buscar(x)] || []).push(x); });
+    const lista = Object.keys(grupos).map(function (r) { return grupos[r]; });
+    if (lista.length === 1) break;
+    let chico = lista[0];
+    lista.forEach(function (g) { if (g.length < chico.length) chico = g; });   // la zona más pequeña
+    const raizChico = buscar(chico[0]);
+    let mejor = null;
+    chico.forEach(function (a) {
+      Object.keys(nodos).forEach(function (b) {
+        if (buscar(b) === raizChico) return;
+        const d = Math.hypot(nodos[a].x - nodos[b].x, nodos[a].y - nodos[b].y);
+        if (!mejor || d < mejor[2]) mejor = [a, b, d];
+      });
+    });
+    calles.push([mejor[0], mejor[1]]);
+    raiz[buscar(mejor[0])] = buscar(mejor[1]);
+  }
+
+  // Tamaño total (sirve para colocar parques y el río)
+  let ancho = 0, alto = 0;
+  Object.keys(nodos).forEach(function (id) {
+    ancho = Math.max(ancho, nodos[id].x);
+    alto = Math.max(alto, nodos[id].y);
+  });
+
+  // Decoración (solo en ciudades de 20 nodos o más)
+  const parques = [];
+  let rio = null;
+  if (n >= 20) {
+    const cantidad = 3 + Math.floor(n / 30);
+    for (let i = 0; i < cantidad; i++) {
+      parques.push({ x: azar() * ancho, y: azar() * alto, w: 60 + azar() * 70, h: 50 + azar() * 60 });
+    }
+    const y1 = alto * (0.3 + azar() * 0.4);
+    const y2 = alto * (0.3 + azar() * 0.4);
+    rio = 'M -150 ' + y1 + ' Q ' + (ancho / 2) + ' ' + ((y1 + y2) / 2) + ' ' + (ancho + 150) + ' ' + y2;
+  }
+
+  // Tamaño del círculo de cada nodo: más chico mientras más nodos haya
+  let radio = Math.min(24, Math.max(12, Math.round(Math.sqrt(n) * 2)));
+  if (n >= 200) radio = 8;
+  if (n >= 500) radio = 5;
+  if (n >= 1000) radio = 3;
+  if (n >= 5000) radio = 2;
+
+  return {
+    titulo: 'Ciudad de ' + n + ' nodos', r: radio, origen: '1', destino: String(n),
+    nodos: nodos, calles: calles, parques: parques, rio: rio,
+    curvas: true      // las calles se dibujan ligeramente curvas, como en un mapa
+  };
 }
 
-function pintarProbs(p){
-  p.forEach((x,i)=>{
-    $("pc"+i).textContent=x.toFixed(1)+"%";
-    $("br"+i).style.width=x+"%";
-    if(E.mesa.length>=3) $("ju"+i).textContent=NOMBRES[mejor(E.manos[i].concat(E.mesa))[0]];
+const mapas = {
+  barrio: {
+    titulo: 'Barrio sencillo', r: 22, origen: 'A', destino: 'J',
+    nodos: {
+      A: { x: 80, y: 80 },   B: { x: 260, y: 50 },  C: { x: 460, y: 80 },
+      D: { x: 620, y: 150 }, E: { x: 160, y: 230 }, F: { x: 340, y: 200 },
+      G: { x: 520, y: 280 }, H: { x: 90, y: 360 },  I: { x: 300, y: 350 },
+      J: { x: 600, y: 370 }
+    },
+    calles: [
+      ['A', 'B', 4], ['B', 'C', 6], ['C', 'D', 5], ['A', 'E', 5], ['B', 'F', 3],
+      ['C', 'F', 4], ['C', 'G', 7], ['D', 'G', 3], ['E', 'F', 4], ['E', 'H', 6],
+      ['F', 'I', 5], ['F', 'G', 6], ['H', 'I', 4], ['I', 'G', 5], ['G', 'J', 4],
+      ['I', 'J', 8], ['A', 'F', 6], ['E', 'I', 7], ['D', 'J', 9], ['A', 'H', 9]
+    ]
+  },
+
+  pamplona: {
+    titulo: 'Pamplona (mapa real)', r: 13, origen: '1', destino: '12',
+    ancho: 768, alto: 456, giroInicial: 90,   // este mapa se puede girar
+    nombres: {
+      1: 'Agueda Gallardo', 2: 'Museo Casa Anzoátegui', 3: 'Centro', 4: 'Plazuela Almeyda',
+      5: 'Terminal', 6: 'Instituto de Educación Rural', 7: 'Agueda Gallardo de Villamizar',
+      8: 'Estadio Camilo Daza', 9: 'El Castillo Embrujado', 10: 'Batallón García Rovira',
+      11: 'Escuela Normal Superior', 12: 'Casa de Encuentros', 13: 'Cerro las Tres Cruces',
+      14: 'Punto 14', 15: 'Punto 15', 16: 'Punto 16', 17: 'Punto 17'
+    },
+    nodos: {
+      1: { x: 388, y: 16 },   2: { x: 364, y: 67 },   3: { x: 382, y: 107 },  4: { x: 318, y: 117 },
+      5: { x: 566, y: 53 },   6: { x: 446, y: 146 },  7: { x: 409, y: 208 },  8: { x: 229, y: 204 },
+      9: { x: 164, y: 286 },  10: { x: 217, y: 301 }, 11: { x: 97, y: 376 },  12: { x: 469, y: 432 },
+      13: { x: 685, y: 230 }, 14: { x: 598, y: 178 }, 15: { x: 339, y: 169 }, 16: { x: 372, y: 263 },
+      17: { x: 421, y: 366 }
+    },
+    calles: [
+      ['1', '2'], ['2', '3'], ['3', '4'], ['3', '15'], ['4', '15'], ['3', '6'], ['6', '5'],
+      ['6', '7'], ['15', '7'], ['15', '8'], ['15', '16'], ['8', '10'], ['10', '9'], ['9', '11'],
+      ['10', '16'], ['16', '7'], ['16', '17'], ['17', '12'], ['7', '14'], ['14', '13']
+    ]
+  },
+
+  cuadricula: crearCuadricula(),
+
+  trampa: {
+    titulo: 'El atajo engañoso', r: 24, origen: 'S', destino: 'T',
+    nodos: {
+      S: { x: 80, y: 170 }, A: { x: 250, y: 70 }, B: { x: 420, y: 70 },
+      C: { x: 330, y: 270 }, T: { x: 620, y: 170 }
+    },
+    calles: [['S', 'T', 10], ['S', 'A', 3], ['A', 'B', 2], ['B', 'T', 3], ['A', 'C', 6], ['C', 'T', 1], ['S', 'C', 8]]
+  }
+};
+
+// Las ciudades generadas
+[5, 10, 20, 50, 100, 150, 200, 500, 1000, 5000, 10000, 20000].forEach(function (n, posicion) {
+  mapas['ciudad' + n] = crearCiudad(n, 7 + posicion * 13);
+});
+
+
+// ---------------------------------------------------------------------
+// 2. VARIABLES Y ELEMENTOS DE LA PÁGINA
+// ---------------------------------------------------------------------
+function $(id) { return document.getElementById(id); }
+
+const selMapa = $('grafo');
+const selModo = $('modo');
+const selOrigen = $('origen');
+const selDestino = $('destino');
+const svg = $('mapa');
+const cuerpoTabla = $('tabla');
+const explicacion = $('explicacion');
+const marcador = $('marcador');
+const btnPaso = $('btnPaso');
+const btnAuto = $('btnAuto');
+const btnSolucion = $('btnSolucion');
+const btnComprobar = $('btnComprobar');
+const btnGirar = $('btnGirar');
+
+let mapa;            // el mapa que se está usando
+let vecinos;         // vecinos[nodo] = lista de { nodo, peso }
+let pesos;           // pesos['A|B'] = distancia de la calle A-B
+
+// Estado del algoritmo
+let distancia;       // mejor distancia conocida desde el origen
+let previo;          // desde qué nodo se llegó mejor a cada nodo
+let visitados;       // nodos ya terminados
+let pendientes;      // nodos que faltan por visitar
+let nodoActual;      // el último nodo visitado
+let terminado;       // ¿ya acabó el algoritmo?
+let temporizador;    // para el botón Reproducir
+
+// Estado de los modos
+let camino = [];     // ruta que arma el alumno (modo "Encuentra la ruta")
+let aciertos = 0;
+let intentos = 0;
+let nodoConFoco = null;   // para no perder el foco del teclado al redibujar
+
+function texto(d) { return d === Infinity ? '∞' : d; }
+
+
+// ---------------------------------------------------------------------
+// 3. CARGAR EL MAPA Y EL ALGORITMO
+// ---------------------------------------------------------------------
+
+// Gira los nodos 90° en sentido horario (solo mapas con giroInicial)
+function aplicarGiro() {
+  if (mapa.giroInicial === undefined) return;
+  if (!mapa.original) {
+    mapa.original = JSON.parse(JSON.stringify(mapa.nodos));
+    mapa.giro = mapa.giroInicial;
+  }
+  const w = mapa.ancho, h = mapa.alto, g = mapa.giro;
+  mapa.nodos = {};
+  Object.keys(mapa.original).forEach(function (id) {
+    const x = mapa.original[id].x, y = mapa.original[id].y;
+    if (g === 90) mapa.nodos[id] = { x: h - y, y: x };
+    else if (g === 180) mapa.nodos[id] = { x: w - x, y: h - y };
+    else if (g === 270) mapa.nodos[id] = { x: y, y: w - x };
+    else mapa.nodos[id] = { x: x, y: y };
   });
 }
 
-function dibujarOuts(){
-  const cont=$("outsLista"), res=calcularOuts();
-  if(!res){
-    cont.innerHTML=`<p class="vacio">${E.mesa.length<3?"Aparecen cuando se reparte el flop.":"Ya salieron todas las cartas."}</p>`;
+function cargarMapa(clave, conservarSeleccion) {
+  mapa = mapas[clave];
+  aplicarGiro();
+  btnGirar.hidden = mapa.giroInicial === undefined;
+
+  // Preparar vecinos y pesos
+  vecinos = {};
+  pesos = {};
+  Object.keys(mapa.nodos).forEach(function (id) { vecinos[id] = []; });
+  mapa.calles.forEach(function (calle) {
+    const u = calle[0], v = calle[1];
+    if (calle[2] === undefined) {   // sin distancia: se calcula con el dibujo
+      const a = mapa.nodos[u], b = mapa.nodos[v];
+      calle[2] = Math.max(1, Math.round(Math.hypot(a.x - b.x, a.y - b.y) / 20));
+    }
+    const peso = calle[2];
+    pesos[u + '|' + v] = peso;
+    pesos[v + '|' + u] = peso;
+    vecinos[u].push({ nodo: v, peso: peso });
+    vecinos[v].push({ nodo: u, peso: peso });
+  });
+
+  // Llenar las listas de origen y destino
+  if (!conservarSeleccion) {
+    [selOrigen, selDestino].forEach(function (lista) {
+      lista.replaceChildren();
+      Object.keys(mapa.nodos).forEach(function (id) {
+        const nombre = mapa.nombres ? id + ' · ' + mapa.nombres[id] : id;
+        lista.add(new Option(nombre, id));
+      });
+    });
+    selOrigen.value = mapa.origen;
+    selDestino.value = mapa.destino;
+  }
+  reiniciar();
+}
+
+// Dijkstra completo de una sola vez (sirve para comprobar respuestas)
+function calcularRutaMasCorta(desde) {
+  const dist = {}, prev = {}, listos = {};
+  const ids = Object.keys(mapa.nodos);
+  ids.forEach(function (id) { dist[id] = Infinity; prev[id] = null; });
+  dist[desde] = 0;
+
+  while (true) {
+    // El nodo sin terminar con menor distancia
+    let mejor = null;
+    ids.forEach(function (id) {
+      if (!listos[id] && dist[id] < Infinity && (mejor === null || dist[id] < dist[mejor])) mejor = id;
+    });
+    if (mejor === null) break;
+    listos[mejor] = true;
+    // Mejorar a sus vecinos
+    vecinos[mejor].forEach(function (v) {
+      if (dist[mejor] + v.peso < dist[v.nodo]) {
+        dist[v.nodo] = dist[mejor] + v.peso;
+        prev[v.nodo] = mejor;
+      }
+    });
+  }
+  return { dist: dist, prev: prev };
+}
+
+// Arma la lista de nodos de la ruta yendo hacia atrás desde el final
+function armarRuta(prev, fin) {
+  const ruta = [];
+  for (let n = fin; n; n = prev[n]) ruta.unshift(n);
+  return ruta;
+}
+
+// Deja todo como al principio
+function reiniciar() {
+  clearInterval(temporizador);
+  temporizador = null;
+
+  distancia = {};
+  previo = {};
+  Object.keys(mapa.nodos).forEach(function (id) { distancia[id] = Infinity; previo[id] = null; });
+  distancia[selOrigen.value] = 0;
+  visitados = new Set();
+  pendientes = new Set(Object.keys(mapa.nodos));
+  nodoActual = null;
+  terminado = false;
+  camino = [selOrigen.value];
+  aciertos = 0;
+  intentos = 0;
+
+  // Cada modo muestra solo los botones que usa
+  const modo = selModo.value;
+  const observando = modo === 'observar';
+  btnPaso.hidden = !observando;
+  btnAuto.hidden = !observando;
+  document.querySelector('.control-velocidad').hidden = !observando;
+  document.querySelector('.control-instantaneo').hidden = !observando;
+  btnComprobar.hidden = modo !== 'desafio';
+  $('bloqueTabla').hidden = modo === 'desafio';
+  actualizarBotonSolucion();
+
+  btnPaso.disabled = false;
+  btnAuto.disabled = false;
+  btnAuto.textContent = 'Reproducir';
+  btnSolucion.textContent = 'Ver solución';
+  svg.classList.toggle('clicable', !observando);
+  marcador.textContent = '';
+  listarCalles();
+
+  if (modo === 'observar') {
+    explicacion.textContent = 'Distancia 0 en ' + selOrigen.value + ' (origen) e infinito en los demás. Pulsa «Siguiente paso».';
+  } else if (modo === 'predecir') {
+    explicacion.textContent = 'Haz clic en el nodo que Dijkstra visitará ahora: el pendiente con menor distancia. Empieza por el origen.';
+  } else {
+    explicacion.textContent = 'Partes de ' + selOrigen.value + '. Haz clic en nodos vecinos para armar tu ruta hasta ' +
+      selDestino.value + '. Clic en el último nodo para deshacer.';
+  }
+  dibujar();
+}
+
+// El pendiente con menor distancia: el que toca visitar
+function elegirSiguiente() {
+  let mejor = null;
+  pendientes.forEach(function (id) {
+    if (mejor === null || distancia[id] < distancia[mejor]) mejor = id;
+  });
+  return mejor;
+}
+
+// Un paso de Dijkstra. "elegido" es el nodo que el alumno escogió (modo predecir).
+// "sinDibujar" sirve para ir rápido en el modo Instantáneo.
+function darPaso(elegido, sinDibujar) {
+  if (terminado) return;
+  const nodo = elegido !== undefined ? elegido : elegirSiguiente();
+
+  if (nodo === null || distancia[nodo] === Infinity) {
+    terminar('No hay camino hasta el destino.', false);
     return;
   }
-  cont.innerHTML=res.map((lista,i)=>{
-    const o=lista.filter(x=>x.p>.5).sort((a,b)=>b.p-a.p);
-    const cuerpo=o.length
-      ? `<div class="tira" id="tira${i}">${o.map(x=>`<div class="oc">${htmlCarta(x.c,false)}<span>${Math.round(x.p*100)}%</span></div>`).join("")}</div>
-         <input type="range" class="desl" id="de${i}" min="0" max="100" value="0" aria-label="Deslizar las cartas del jugador ${i+1}">`
-      : `<p class="vacio">Ninguna carta lo hace ganar.</p>`;
-    return `<div class="fila"><div class="fl">Jugador ${i+1}: ${o.length} ${o.length===1?"carta":"cartas"}</div>${cuerpo}</div>`;
-  }).join("");
-  res.forEach((_,i)=>{
-    const t=$("tira"+i), d=$("de"+i); if(!t) return;
-    d.oninput=()=>{ t.scrollLeft=d.value/100*(t.scrollWidth-t.clientWidth); };
-    t.onscroll=()=>{ const mx=t.scrollWidth-t.clientWidth; d.value=mx?t.scrollLeft/mx*100:0; };
+
+  // Visitar el nodo
+  nodoActual = nodo;
+  pendientes.delete(nodo);
+  visitados.add(nodo);
+
+  // Mirar cada calle del nodo y mejorar a los vecinos si se puede
+  const mejoras = [];
+  vecinos[nodo].forEach(function (v) {
+    if (visitados.has(v.nodo)) return;
+    const nueva = distancia[nodo] + v.peso;
+    if (nueva < distancia[v.nodo]) {
+      mejoras.push(v.nodo + ': ' + texto(distancia[v.nodo]) + ' → ' + nueva);
+      distancia[v.nodo] = nueva;
+      previo[v.nodo] = nodo;
+    }
+  });
+
+  explicacion.textContent = 'Visitamos ' + nodo + ' (distancia ' + distancia[nodo] + '). ' +
+    (mejoras.length ? 'Caminos mejores: ' + mejoras.join(', ') + '.' : 'No mejora a ningún vecino.');
+
+  if (nodo === selDestino.value) {
+    terminar('¡Llegamos a ' + nodo + '! La ruta más corta mide ' + distancia[nodo] + '.', true);
+    return;
+  }
+  if (!sinDibujar) dibujar();
+}
+
+function terminar(mensaje, hayRuta) {
+  terminado = true;
+  clearInterval(temporizador);
+  temporizador = null;
+  btnPaso.disabled = true;
+  btnAuto.disabled = true;
+  explicacion.textContent = mensaje;
+  dibujar(hayRuta ? armarRuta(previo, selDestino.value) : []);
+}
+
+// «Ver solución» solo aparece cuando la ruta del alumno ya llega al destino
+function actualizarBotonSolucion() {
+  const llego = camino[camino.length - 1] === selDestino.value;
+  btnSolucion.hidden = !(selModo.value === 'desafio' && llego);
+}
+
+// Suma las distancias de la ruta del alumno
+function costoDelCamino() {
+  let total = 0;
+  for (let i = 1; i < camino.length; i++) total += pesos[camino[i - 1] + '|' + camino[i]];
+  return total;
+}
+
+
+// ---------------------------------------------------------------------
+// 4. CLICS SOBRE LOS NODOS
+// ---------------------------------------------------------------------
+function clicNodo(id) {
+  if (selModo.value === 'predecir') clicPredecir(id);
+  if (selModo.value === 'desafio') clicDesafio(id);
+}
+
+// Modo 2: ¿acertó el nodo que Dijkstra visitaría ahora?
+function clicPredecir(id) {
+  if (terminado) return;
+  intentos++;
+  const correcto = elegirSiguiente();
+  if (pendientes.has(id) && distancia[id] === distancia[correcto]) {
+    aciertos++;
+    darPaso(id);
+  } else if (visitados.has(id)) {
+    explicacion.textContent = '❌ ' + id + ' ya fue visitado. Busca entre los pendientes.';
+  } else {
+    explicacion.textContent = '❌ ' + id + ' tiene distancia ' + texto(distancia[id]) +
+      '. Mira la tabla: ¿hay un pendiente con distancia menor?';
+  }
+  marcador.textContent = 'Aciertos: ' + aciertos + ' de ' + intentos;
+}
+
+// Modo 1: el alumno arma su ruta nodo por nodo
+function clicDesafio(id) {
+  const ultimo = camino[camino.length - 1];
+
+  if (id === ultimo) {                       // clic en el último nodo: deshacer
+    if (camino.length > 1) camino.pop();
+  } else if (ultimo === selDestino.value) {  // ya llegó: no se agrega más
+    return;
+  } else if (!pesos[ultimo + '|' + id]) {    // no hay calle entre esos nodos
+    explicacion.textContent = '❌ No hay calle directa de ' + ultimo + ' a ' + id + '.';
+    return;
+  } else {
+    camino.push(id);
+  }
+
+  const costo = costoDelCamino();
+  marcador.textContent = 'Tu ruta: ' + costo;
+  explicacion.textContent = 'Ruta: ' + camino.join(' → ') + ' (costo ' + costo + ').';
+  actualizarBotonSolucion();
+
+  if (camino[camino.length - 1] === selDestino.value) {
+    const mejor = calcularRutaMasCorta(selOrigen.value).dist[selDestino.value];
+    if (costo === mejor) explicacion.textContent += ' 🎉 ¡Es la ruta más corta!';
+    else explicacion.textContent += ' Llegaste, pero la mejor cuesta ' + mejor + '. Deshaz y prueba otra, o pulsa «Ver solución».';
+  }
+  dibujar();
+}
+
+// Botón «Comprobar mi ruta»
+function comprobarRuta() {
+  const costo = costoDelCamino();
+  const fin = camino[camino.length - 1];
+  const meta = selDestino.value;
+
+  if (camino.length < 2) {
+    explicacion.textContent = 'Todavía no has armado una ruta. Haz clic en nodos vecinos desde el origen.';
+  } else if (fin !== meta) {
+    explicacion.textContent = '⚠️ Tu ruta aún no llega al destino ' + meta + ': va por ' + camino.join(' → ') +
+      ' (costo ' + costo + ') y termina en ' + fin + '. Sigue hasta ' + meta + ' y vuelve a comprobar.';
+  } else {
+    const mejor = calcularRutaMasCorta(selOrigen.value).dist[meta];
+    if (costo === mejor) {
+      explicacion.textContent = '✅ ¡Correcto! Tu ruta ' + camino.join(' → ') + ' cuesta ' + costo + ' y es la más corta posible.';
+    } else {
+      explicacion.textContent = '❌ Tu ruta llega, pero no es la mejor: cuesta ' + costo + ' y la mejor cuesta ' + mejor +
+        ' (' + (costo - mejor) + ' más). Deshaz pasos (clic en el último nodo) y prueba otra, o pulsa «Ver solución».';
+    }
+  }
+  marcador.textContent = camino.length > 1 ? 'Tu ruta: ' + costo : '';
+}
+
+// Botón «Ver solución»
+function verSolucion() {
+  const resultado = calcularRutaMasCorta(selOrigen.value);
+  const costo = resultado.dist[selDestino.value];
+  explicacion.textContent = 'Solución de Dijkstra: costo ' + texto(costo) + '.';
+  dibujar(costo < Infinity ? armarRuta(resultado.prev, selDestino.value) : []);
+}
+
+
+// ---------------------------------------------------------------------
+// 5. DIBUJO (SVG)
+// ---------------------------------------------------------------------
+const NS = 'http://www.w3.org/2000/svg';
+const CURVATURA = 0.3;   // qué tan curvas se ven las calles de las ciudades (0 = rectas)
+
+// Crea un elemento SVG con sus atributos
+function crear(tipo, atributos, contenido) {
+  const e = document.createElementNS(NS, tipo);
+  Object.keys(atributos).forEach(function (nombre) { e.setAttribute(nombre, atributos[nombre]); });
+  if (contenido !== undefined) e.textContent = contenido;
+  return e;
+}
+
+// ¿La lista contiene la calle u-v (en cualquier sentido)?
+function contieneCalle(lista, u, v) {
+  for (let i = 1; i < lista.length; i++) {
+    if ((lista[i - 1] === u && lista[i] === v) || (lista[i - 1] === v && lista[i] === u)) return true;
+  }
+  return false;
+}
+
+// Trazo de una calle entre los nodos u y v: recta, o ligeramente curva en las ciudades.
+// La curvatura sale de los nombres de los nodos, así cada calle siempre se ve igual.
+function trazarCalle(u, v) {
+  const a = mapa.nodos[u], b = mapa.nodos[v];
+  if (!mapa.curvas) {
+    return { d: 'M' + a.x + ' ' + a.y + ' L' + b.x + ' ' + b.y, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+  }
+  let h = 0;
+  const nombre = [u, v].sort().join('|');
+  for (let i = 0; i < nombre.length; i++) h = (h * 31 + nombre.charCodeAt(i)) % 997;
+  const curvatura = (h / 997 - 0.5) * CURVATURA;      // entre -CURVATURA/2 y +CURVATURA/2
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const cx = (a.x + b.x) / 2 - dy * curvatura;        // punto de control de la curva
+  const cy = (a.y + b.y) / 2 + dx * curvatura;
+  return {
+    d: 'M' + a.x + ' ' + a.y + ' Q' + cx + ' ' + cy + ' ' + b.x + ' ' + b.y,
+    mx: (a.x + b.x) / 4 + cx / 2,                     // punto medio de la curva (para el número)
+    my: (a.y + b.y) / 4 + cy / 2
+  };
+}
+
+// "ruta" = nodos de la ruta óptima que hay que resaltar (opcional)
+function dibujar(ruta) {
+  ruta = ruta || [];
+  const desafio = selModo.value === 'desafio';
+  const ids = Object.keys(mapa.nodos);
+  const muchosNodos = ids.length > 45;
+  svg.replaceChildren();
+
+  // Encuadre: que se vean todos los nodos con un poco de margen
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  ids.forEach(function (id) {
+    minX = Math.min(minX, mapa.nodos[id].x); maxX = Math.max(maxX, mapa.nodos[id].x);
+    minY = Math.min(minY, mapa.nodos[id].y); maxY = Math.max(maxY, mapa.nodos[id].y);
+  });
+  const margen = mapa.r + 28;
+  const x0 = minX - margen;
+  const y0 = minY - mapa.r * 3.4 - 8;     // arriba más espacio por el pin del destino
+  const ancho = maxX + margen - x0;
+  const alto = maxY + margen - y0;
+  svg.setAttribute('viewBox', x0 + ' ' + y0 + ' ' + ancho + ' ' + alto);
+
+  // Fondo: tierra, parques y río
+  svg.append(crear('rect', { class: 'tierra', x: x0, y: y0, width: ancho, height: alto }));
+  (mapa.parques || []).forEach(function (p) {
+    svg.append(crear('rect', { class: 'parque', x: p.x - p.w / 2, y: p.y - p.h / 2, width: p.w, height: p.h, rx: 18 }));
+  });
+  if (mapa.rio) svg.append(crear('path', { class: 'rio', d: mapa.rio }));
+
+  // Calles: primero el borde, luego la línea de encima
+  const calles = mapa.calles.map(function (calle) {
+    const u = calle[0], v = calle[1];
+    let clase = '';
+    if (contieneCalle(ruta, u, v)) clase = ' ruta';
+    else if (desafio && contieneCalle(camino, u, v)) clase = ' alumno';
+    else if (!desafio && (previo[v] === u || previo[u] === v)) clase = ' explorada';
+    const trazo = trazarCalle(u, v);
+    return { d: trazo.d, clase: clase, peso: calle[2], mx: trazo.mx, my: trazo.my };
+  });
+  ['borde', 'arista'].forEach(function (tipo) {
+    calles.forEach(function (c) { svg.append(crear('path', { class: tipo + c.clase, d: c.d })); });
+  });
+  // Distancias de las calles (en mapas grandes solo las de la ruta)
+  calles.forEach(function (c) {
+    if (muchosNodos && !c.clase) return;
+    svg.append(crear('text', { class: 'peso', x: c.mx, y: c.my + 4 }, c.peso));
+  });
+
+  // Nodos
+  ids.forEach(function (id) {
+    const x = mapa.nodos[id].x, y = mapa.nodos[id].y, r = mapa.r;
+    let clase = 'nodo';
+    if (ruta.indexOf(id) >= 0) clase += ' ruta';
+    else if (desafio && camino.indexOf(id) >= 0) clase += ' camino';
+    else if (id === nodoActual) clase += ' actual';
+    else if (visitados.has(id)) clase += ' visitado';
+
+    const grupo = crear('g', { class: clase, 'data-id': id });
+    grupo.append(crear('circle', { cx: x, cy: y, r: r }));
+    grupo.append(crear('text', { x: x, y: y, style: 'font-size:' + Math.round(r * 0.75) + 'px' }, id));
+
+    // Distancia debajo del nodo (con ★ si es el actual y ✓ si ya fue visitado)
+    if (!desafio) {
+      const marca = id === nodoActual ? ' ★' : visitados.has(id) ? ' ✓' : '';
+      grupo.append(crear('text', {
+        class: 'dist', x: x, y: y + r + Math.round(r * 0.65),
+        style: 'font-size:' + Math.round(r * 0.62) + 'px'
+      }, texto(distancia[id]) + marca));
+    }
+
+    // En los modos 1 y 2 los nodos se pueden pulsar (ratón, dedo o teclado)
+    if (selModo.value !== 'observar') {
+      const nombre = mapa.nombres ? ', ' + mapa.nombres[id] : '';
+      const dato = desafio ? '' : ', distancia ' + texto(distancia[id]);
+      grupo.setAttribute('aria-label', 'Nodo ' + id + nombre + dato);
+      grupo.setAttribute('role', 'button');
+      grupo.setAttribute('tabindex', 0);
+      grupo.addEventListener('click', function () { clicNodo(id); });
+      grupo.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          nodoConFoco = id;
+          clicNodo(id);
+        }
+      });
+    }
+    svg.append(grupo);
+  });
+
+  // Si se usó el teclado, devolver el foco al mismo nodo
+  if (nodoConFoco !== null) {
+    const elemento = svg.querySelector('[data-id="' + nodoConFoco + '"]');
+    if (elemento) elemento.focus({ preventScroll: true });
+    nodoConFoco = null;
+  }
+
+  // Origen (círculo azul) y destino (pin rojo)
+  const o = mapa.nodos[selOrigen.value], d = mapa.nodos[selDestino.value], k = mapa.r;
+  svg.append(crear('circle', { class: 'origen', cx: o.x, cy: o.y, r: k + 5 }));
+  svg.append(crear('path', {
+    class: 'pin',
+    d: 'M' + d.x + ' ' + (d.y - k) +
+       ' C' + (d.x - k * 1.2) + ' ' + (d.y - k * 2) + ' ' + (d.x - k) + ' ' + (d.y - k * 3.2) + ' ' + d.x + ' ' + (d.y - k * 3.2) +
+       ' C' + (d.x + k) + ' ' + (d.y - k * 3.2) + ' ' + (d.x + k * 1.2) + ' ' + (d.y - k * 2) + ' ' + d.x + ' ' + (d.y - k) + 'Z'
+  }));
+  svg.append(crear('circle', { class: 'pin-centro', cx: d.x, cy: d.y - k * 2.2, r: k * 0.38 }));
+
+  // Tabla de distancias
+  cuerpoTabla.replaceChildren();
+  if (desafio) return;
+  ids.forEach(function (id) {
+    const fila = cuerpoTabla.insertRow();
+    if (id === nodoActual) fila.className = 'fila-actual';
+    fila.insertCell().textContent = id;
+    fila.insertCell().textContent = texto(distancia[id]);
+    fila.insertCell().textContent = previo[id] || '—';
   });
 }
 
-// Ranking de mejor a peor, con la razón de cada posición
-function dibujarRanking(final){
-  const cont=$("rankLista");
-  if(E.mesa.length<3){
-    cont.innerHTML=`<p class="vacio">Aparece cuando se reparte el flop.</p>`; return;
+// Lista de calles en texto (para lectores de pantalla o para quien prefiera leer)
+function listarCalles() {
+  const lista = $('listaCalles');
+  lista.replaceChildren();
+  mapa.calles.forEach(function (calle) {
+    const li = document.createElement('li');
+    li.textContent = calle[0] + ' ↔ ' + calle[1] + ': distancia ' + calle[2];
+    lista.append(li);
+  });
+}
+
+
+// ---------------------------------------------------------------------
+// 6. BOTONES Y CONTROLES
+// ---------------------------------------------------------------------
+
+// Llenar la lista de mapas
+Object.keys(mapas).forEach(function (clave) {
+  selMapa.add(new Option(mapas[clave].titulo, clave));
+});
+
+selMapa.addEventListener('change', function () { cargarMapa(selMapa.value); });
+selModo.addEventListener('change', reiniciar);
+selOrigen.addEventListener('change', reiniciar);
+selDestino.addEventListener('change', reiniciar);
+
+btnPaso.addEventListener('click', function () { darPaso(); });
+$('btnReiniciar').addEventListener('click', reiniciar);
+btnComprobar.addEventListener('click', comprobarRuta);
+btnSolucion.addEventListener('click', verSolucion);
+
+btnGirar.addEventListener('click', function () {
+  mapa.giro = (mapa.giro + 90) % 360;
+  cargarMapa(selMapa.value, true);
+});
+
+// Sortear origen y destino distintos
+$('btnSorteo').addEventListener('click', function () {
+  const ids = Object.keys(mapa.nodos);
+  selOrigen.value = ids[Math.floor(Math.random() * ids.length)];
+  do {
+    selDestino.value = ids[Math.floor(Math.random() * ids.length)];
+  } while (selDestino.value === selOrigen.value);
+  reiniciar();
+});
+
+// Velocidad del botón Reproducir
+function milisegundos() { return Number($('velocidad').value); }
+
+$('velocidad').addEventListener('input', function () {
+  $('valorVelocidad').textContent = milisegundos() + ' ms';
+  if (temporizador) {   // si está reproduciendo, cambiar la velocidad al momento
+    clearInterval(temporizador);
+    temporizador = setInterval(darPaso, milisegundos());
   }
-  const ev=E.manos.map((h,i)=>({i,...mejorMano(h.concat(E.mesa))}))
-                  .sort((a,b)=>cmp(b.score,a.score));
-  const lider=ev[0];
-  let pos=0;
-  cont.innerHTML=ev.map((r,k)=>{
-    if(k===0||cmp(r.score,ev[k-1].score)!==0) pos=k+1;
-    const empataLider=cmp(r.score,lider.score)===0;
-    let razon;
-    if(empataLider){
-      const abajo=ev.find(x=>cmp(x.score,r.score)<0);
-      razon = abajo
-        ? `${final?"Gana":"Va ganando"} al Jugador ${abajo.i+1}: ${porQue(abajo.score,r.score)}`
-        : "Todos tienen la misma jugada: se reparten el bote.";
-      if(ev.filter(x=>cmp(x.score,lider.score)===0).length>1 && abajo)
-        razon=`Empata con el líder. ${razon}`;
-    } else {
-      razon=`${final?"Pierde":"Va detrás"} del Jugador ${lider.i+1}: ${porQue(r.score,lider.score)}`;
-    }
-    return `<div class="rk${empataLider?" top":""}">
-      <div class="rk-pos">${pos}º</div>
-      <div class="rk-cuerpo">
-        <div class="fl">Jugador ${r.i+1} · ${describir(r.score)}</div>
-        <div class="rk-cartas">${r.cartas.map(c=>htmlCarta(c,false)).join("")}</div>
-        <div class="razon">${razon}</div>
-      </div></div>`;
-  }).join("");
+});
+
+// Modo instantáneo: hacer todos los pasos de golpe y dibujar solo el final
+function ejecutarTodo() {
+  clearInterval(temporizador);
+  temporizador = null;
+  btnAuto.textContent = 'Reproducir';
+  while (!terminado) darPaso(undefined, true);
 }
 
-/* ---------- 8. FLUJO DEL JUEGO ---------- */
-function actualizarTodo(final=false){
-  pintarProbs(probabilidades());
-  dibujarRanking(final);
-  setTimeout(dibujarOuts,30);   // deja pintar la mesa antes del cálculo pesado
-}
+$('instantaneo').addEventListener('change', function () {
+  if (this.checked && temporizador) ejecutarTodo();
+});
 
-function nuevaMano(){
-  E.n=+$("njug").value; E.baraja=crearBaraja(); E.mesa=[]; E.etapa=0;
-  E.manos=Array.from({length:E.n},()=>[]);
-  for(let r=0;r<2;r++) for(let i=0;i<E.n;i++) E.manos[i].push(repartirCarta());
-  $("aviso").textContent="";
-  dibujarAsientos(); dibujarMesa(0); actualizarTodo();
-  $("btnSig").textContent="Repartir flop";
-}
+btnAuto.addEventListener('click', function () {
+  if ($('instantaneo').checked) { ejecutarTodo(); return; }
+  if (temporizador) {                          // estaba reproduciendo: pausar
+    clearInterval(temporizador);
+    temporizador = null;
+    btnAuto.textContent = 'Reproducir';
+  } else {                                     // reproducir
+    btnAuto.textContent = 'Pausar';
+    temporizador = setInterval(darPaso, milisegundos());
+  }
+});
 
-function siguiente(){
-  if(E.etapa<0||E.etapa===3){ nuevaMano(); return; }
-  const previas=E.mesa.length;
-  repartirCarta();                               // carta quemada
-  const k=E.etapa===0?3:1;
-  for(let i=0;i<k;i++) E.mesa.push(repartirCarta());
-  E.etapa++; dibujarMesa(previas);
-  actualizarTodo(E.etapa===3);
-  if(E.etapa===3) terminar();
-  else $("btnSig").textContent=E.etapa===1?"Repartir turn":"Repartir river";
-}
-
-function terminar(){
-  const {mx,gan}=ganadores(E.manos.map(h=>mejor(h.concat(E.mesa))));
-  E.manos.forEach((_,i)=>$("as"+i).classList.add(gan.includes(i)?"gana":"pierde"));
-  const jugada=NOMBRES[mx[0]];
-  $("aviso").textContent=gan.length===1
-    ? `Gana el Jugador ${gan[0]+1} con ${jugada}`
-    : `Empate entre los jugadores ${gan.map(i=>i+1).join(", ")} con ${jugada}`;
-  $("btnSig").textContent="Nueva mano";
-}
-
-async function jugarTodo(){
-  if(E.ocupado) return;
-  E.ocupado=true; $("btnSig").disabled=$("btnTodo").disabled=true;
-  if(E.etapa<0||E.etapa===3) nuevaMano();
-  while(E.etapa<3){ await new Promise(r=>setTimeout(r,900)); siguiente(); }
-  E.ocupado=false; $("btnSig").disabled=$("btnTodo").disabled=false;
-}
-
-/* ---------- 9. INICIO ---------- */
-$("btnSig").onclick = () => { if(!E.ocupado) siguiente(); };
-$("btnTodo").onclick = jugarTodo;
-$("njug").onchange  = () => { if(!E.ocupado) nuevaMano(); };
-dibujarMesa(0);
-dibujarOuts();
-dibujarRanking(false);
+// ¡Arrancamos!
+$('valorVelocidad').textContent = milisegundos() + ' ms';
+cargarMapa('barrio');

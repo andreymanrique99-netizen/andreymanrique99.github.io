@@ -1,0 +1,12 @@
+{
+  "name": "dijkstra",
+  "version": "1.0.0",
+  "description": "Dijkstra paso a paso con encuesta",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

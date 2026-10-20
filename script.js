@@ -230,10 +230,30 @@ const mapas = {
   }
 };
 
-// Las ciudades generadas
+// Cambia los números de los nodos por letras (A, B, C...)
+function usarLetras(m) {
+  const letra = {}, nodos = {};
+  Object.keys(m.nodos).forEach(function (id, i) {
+    letra[id] = String.fromCharCode(65 + i);
+    nodos[letra[id]] = m.nodos[id];
+  });
+  m.nodos = nodos;
+  m.calles = m.calles.map(function (c) { return [letra[c[0]], letra[c[1]], c[2]]; });
+  m.origen = letra[m.origen];
+  m.destino = letra[m.destino];
+  return m;
+}
+
+// Las ciudades generadas (la de 20 ya no está aquí: es la Encuesta 1)
 [5, 10, 20, 50, 100, 150, 200, 500, 1000, 5000, 10000, 20000].forEach(function (n, posicion) {
+  if (n === 20) return;
   mapas['ciudad' + n] = crearCiudad(n, 7 + posicion * 13);
 });
+
+// Encuesta 1: el mapa de 20 puntos, con letras en vez de números
+const mapaEncuesta1 = usarLetras(crearCiudad(20, 7 + 2 * 13));
+mapaEncuesta1.titulo = 'Encuesta 1';
+mapas.encuesta1 = mapaEncuesta1;
 
 
 // ---------------------------------------------------------------------
@@ -536,6 +556,7 @@ function clicDesafio(id) {
     const mejor = calcularRutaMasCorta(selOrigen.value).dist[selDestino.value];
     if (costo === mejor) explicacion.textContent += ' 🎉 ¡Es la ruta más corta!';
     else explicacion.textContent += ' Llegaste, pero la mejor cuesta ' + mejor + '. Deshaz y prueba otra, o pulsa «Ver solución».';
+    registrarIntento();
   }
   dibujar();
 }
@@ -565,6 +586,8 @@ function comprobarRuta() {
 
 // Botón «Ver solución»
 function verSolucion() {
+  vioSolucion = true;
+  registrarIntento();
   const resultado = calcularRutaMasCorta(selOrigen.value);
   const costo = resultado.dist[selDestino.value];
   explicacion.textContent = 'Solución de Dijkstra: costo ' + texto(costo) + '.';
@@ -749,10 +772,13 @@ function listarCalles() {
 // 6. BOTONES Y CONTROLES
 // ---------------------------------------------------------------------
 
-// Llenar la lista de mapas
-Object.keys(mapas).forEach(function (clave) {
-  selMapa.add(new Option(mapas[clave].titulo, clave));
-});
+// Llenar la lista de mapas según la encuesta elegida
+function llenarMapas(claves) {
+  selMapa.replaceChildren();
+  claves.forEach(function (clave) {
+    selMapa.add(new Option(mapas[clave].titulo, clave));
+  });
+}
 
 selMapa.addEventListener('change', function () { cargarMapa(selMapa.value); });
 selModo.addEventListener('change', reiniciar);
@@ -814,6 +840,144 @@ btnAuto.addEventListener('click', function () {
   }
 });
 
-// ¡Arrancamos!
+// ---------------------------------------------------------------------
+// 7. ENCUESTA (guarda el nombre en el servidor; una sola vez por persona)
+//    El entorno normal muestra todos los mapas menos el de la encuesta.
+//    El botón «Encuesta» (debajo del mapa) pide el nombre y abre el mapa
+//    de 20 nodos con letras A, B, C...
+// ---------------------------------------------------------------------
+let enEncuesta = false;
+let nombreParticipante = '';
+let vioSolucion = false;
+
+const CLAVE_LOCAL = 'dijkstraEncuestaHecha';
+const CLAVE_CLIENTE = 'dijkstraClienteId';
+
+// Identificador anónimo de este navegador (el servidor también lo guarda)
+function clienteId() {
+  let id = null;
+  try { id = localStorage.getItem(CLAVE_CLIENTE); } catch (e) { /* sin almacenamiento */ }
+  if (!id) {
+    id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    try { localStorage.setItem(CLAVE_CLIENTE, id); } catch (e) { /* sin almacenamiento */ }
+  }
+  return id;
+}
+
+function yaHizoEncuesta() {
+  try { return localStorage.getItem(CLAVE_LOCAL) === '1'; } catch (e) { return false; }
+}
+
+function mapasNormales() {
+  return Object.keys(mapas).filter(function (c) { return c !== 'encuesta1'; });
+}
+
+function enviar(ruta, datos) {
+  return fetch(ruta, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos)
+  }).then(function (r) {
+    return r.json().catch(function () { return {}; }).then(function (cuerpo) {
+      return { estado: r.status, cuerpo: cuerpo };
+    });
+  });
+}
+
+// Guarda en el servidor cómo le fue a la persona (cada vez que llega al destino)
+function registrarIntento() {
+  if (!enEncuesta) return;
+  const costo = costoDelCamino();
+  const mejor = calcularRutaMasCorta(selOrigen.value).dist[selDestino.value];
+  enviar('/api/encuesta/resultado', {
+    nombre: nombreParticipante,
+    clienteId: clienteId(),
+    ruta: camino.join(' > '),
+    costo: costo,
+    mejor: mejor,
+    optima: costo === mejor,
+    vioSolucion: vioSolucion
+  }).catch(function () { /* si falla el envío, la encuesta sigue funcionando */ });
+}
+
+function actualizarEstadoEncuesta() {
+  const hecha = yaHizoEncuesta();
+  $('btnEncuesta').disabled = hecha || enEncuesta;
+  $('estadoEncuesta').textContent = enEncuesta ? 'Encuesta en curso.' :
+    hecha ? 'Ya participaste en la encuesta.' : '';
+}
+
+function entrarEncuesta(nombre) {
+  enEncuesta = true;
+  nombreParticipante = nombre;
+  vioSolucion = false;
+  try { localStorage.setItem(CLAVE_LOCAL, '1'); } catch (e) { /* sin almacenamiento */ }
+
+  llenarMapas(['encuesta1']);
+  $('etiquetaMapa').hidden = true;
+  $('etiquetaModo').hidden = true;
+  $('btnSorteo').hidden = true;
+  selModo.value = 'desafio';
+  $('participante').textContent = nombre + ' · Encuesta';
+  $('barraEncuesta').hidden = false;
+  cargarMapa('encuesta1');
+  selOrigen.disabled = true;
+  selDestino.disabled = true;
+  actualizarEstadoEncuesta();
+}
+
+function salirEncuesta() {
+  clearInterval(temporizador);
+  temporizador = null;
+  enEncuesta = false;
+  $('barraEncuesta').hidden = true;
+  $('etiquetaMapa').hidden = false;
+  $('etiquetaModo').hidden = false;
+  $('btnSorteo').hidden = false;
+  selOrigen.disabled = false;
+  selDestino.disabled = false;
+  const claves = mapasNormales();
+  llenarMapas(claves);
+  cargarMapa(claves[0]);
+  actualizarEstadoEncuesta();
+}
+
+$('btnEncuesta').addEventListener('click', function () {
+  if (yaHizoEncuesta()) { actualizarEstadoEncuesta(); return; }
+  $('errorNombre').textContent = '';
+  $('dlgEncuesta').showModal();
+  $('nombre').focus();
+});
+
+$('btnCancelarNombre').addEventListener('click', function () { $('dlgEncuesta').close(); });
+
+$('formNombre').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const nombre = $('nombre').value.trim().replace(/\s+/g, ' ');
+  if (!nombre) { $('nombre').focus(); return; }
+  $('errorNombre').textContent = 'Conectando con el servidor…';
+  enviar('/api/encuesta/entrar', { nombre: nombre, clienteId: clienteId() }).then(function (r) {
+    if (r.estado === 201) {
+      $('dlgEncuesta').close();
+      entrarEncuesta(nombre);
+    } else if (r.estado === 409) {
+      try { localStorage.setItem(CLAVE_LOCAL, '1'); } catch (e2) { /* sin almacenamiento */ }
+      $('errorNombre').textContent = 'Esta persona ya hizo la encuesta. Solo se puede entrar una vez.';
+      actualizarEstadoEncuesta();
+    } else {
+      $('errorNombre').textContent = (r.cuerpo && r.cuerpo.error) ||
+        'No se pudo guardar el nombre (código ' + r.estado + '). Esta página no está conectada al servidor: ' +
+        'ejecuta «node server.js» en la carpeta del proyecto y abre http://localhost:3000 (no Live Server ni el archivo directo).';
+    }
+  }).catch(function () {
+    $('errorNombre').textContent = 'No hay conexión con el servidor. Ábrelo con «node server.js» y entra por http://localhost:3000.';
+  });
+});
+
+$('btnVolver').addEventListener('click', salirEncuesta);
+
+// ¡Arrancamos! El entorno aparece normal, sin la encuesta.
 $('valorVelocidad').textContent = milisegundos() + ' ms';
-cargarMapa('barrio');
+llenarMapas(mapasNormales());
+cargarMapa(mapasNormales()[0]);
+actualizarEstadoEncuesta();

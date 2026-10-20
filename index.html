@@ -13,11 +13,28 @@
     <p>Encuentra la ruta más corta entre dos puntos, como lo hace un mapa.</p>
   </header>
 
-  <main>
-    <section class="panel">
+  <dialog id="dlgEncuesta" class="dialogo">
+    <form id="formNombre" method="dialog">
+      <h2>Encuesta</h2>
+      <label for="nombre">Escribe tu nombre para resolver el problema. Solo puedes entrar una vez.</label>
+      <input id="nombre" type="text" maxlength="40" required autocomplete="name">
+      <p id="errorNombre" class="error" role="alert"></p>
       <div class="controles">
-        <label>Mapa <select id="grafo"></select></label>
-        <label>Modo <select id="modo">
+        <button type="submit">Entrar a la encuesta</button>
+        <button id="btnCancelarNombre" class="sec" type="button">Cancelar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <main id="app">
+    <section class="panel">
+      <div id="barraEncuesta" class="controles barra-participante" hidden>
+        <strong id="participante"></strong>
+        <button id="btnVolver" class="sec" type="button">Salir de la encuesta</button>
+      </div>
+      <div class="controles">
+        <label id="etiquetaMapa">Mapa <select id="grafo"></select></label>
+        <label id="etiquetaModo">Modo <select id="modo">
           <option value="desafio">1. Encuentra la ruta</option>
           <option value="predecir">2. Predecir el siguiente</option>
           <option value="observar">3. Ruta óptima (observar Dijkstra)</option>
@@ -53,6 +70,11 @@
         <span><i class="c-actual"></i>Nodo actual (★)</span>
         <span><i class="c-visitado"></i>Visitado (✓)</span>
         <span><i class="c-ruta"></i>Ruta óptima</span>
+      </div>
+
+      <div class="zona-encuesta">
+        <button id="btnEncuesta" type="button">Encuesta</button>
+        <span id="estadoEncuesta" class="aviso"></span>
       </div>
     </section>
 

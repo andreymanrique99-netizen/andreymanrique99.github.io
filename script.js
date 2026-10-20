@@ -253,6 +253,7 @@ function usarLetras(m) {
 // Encuesta 1: el mapa de 20 puntos, con letras en vez de números
 const mapaEncuesta1 = usarLetras(crearCiudad(20, 7 + 2 * 13));
 mapaEncuesta1.titulo = 'Encuesta 1';
+mapaEncuesta1.destino = 'S'; // En la encuesta, el destino será el nodo S.
 mapas.encuesta1 = mapaEncuesta1;
 
 
@@ -926,6 +927,7 @@ function entrarEncuesta(nombre) {
   selModo.value = 'desafio';
   $('participante').textContent = nombre + ' · Encuesta';
   $('barraEncuesta').hidden = false;
+  document.querySelector('.control-instantaneo').hidden = true;
   $('btnReiniciar').hidden = true;
   $('bloqueResultados').hidden = true;
   cargarMapa('encuesta1');

@@ -413,7 +413,7 @@ function reiniciar() {
   btnAuto.hidden = !observando;
   document.querySelector('.control-velocidad').hidden = !observando;
   document.querySelector('.control-instantaneo').hidden = !observando;
-  btnComprobar.hidden = modo !== 'desafio';
+  btnComprobar.hidden = modo !== 'desafio' || enEncuesta;
   $('bloqueTabla').hidden = modo === 'desafio';
   actualizarBotonSolucion();
 
@@ -496,7 +496,7 @@ function terminar(mensaje, hayRuta) {
 // «Ver solución» solo aparece cuando la ruta del alumno ya llega al destino
 function actualizarBotonSolucion() {
   const llego = camino[camino.length - 1] === selDestino.value;
-  btnSolucion.hidden = !(selModo.value === 'desafio' && llego);
+  btnSolucion.hidden = enEncuesta || !(selModo.value === 'desafio' && llego);
 }
 
 // Suma las distancias de la ruta del alumno
@@ -849,6 +849,7 @@ btnAuto.addEventListener('click', function () {
 let enEncuesta = false;
 let nombreParticipante = '';
 let vioSolucion = false;
+let rondaActual = null;   // la define el servidor; cambia cuando reinicias la encuesta
 
 const CLAVE_LOCAL = 'dijkstraEncuestaHecha';
 const CLAVE_CLIENTE = 'dijkstraClienteId';
@@ -865,7 +866,12 @@ function clienteId() {
 }
 
 function yaHizoEncuesta() {
-  try { return localStorage.getItem(CLAVE_LOCAL) === '1'; } catch (e) { return false; }
+  try {
+    const v = localStorage.getItem(CLAVE_LOCAL);
+    if (!v) return false;
+    if (rondaActual === null) return true;     // sin servidor: se comporta como antes
+    return v === rondaActual;                  // si la ronda cambió, puede participar otra vez
+  } catch (e) { return false; }
 }
 
 function mapasNormales() {
@@ -911,7 +917,7 @@ function entrarEncuesta(nombre) {
   enEncuesta = true;
   nombreParticipante = nombre;
   vioSolucion = false;
-  try { localStorage.setItem(CLAVE_LOCAL, '1'); } catch (e) { /* sin almacenamiento */ }
+  try { localStorage.setItem(CLAVE_LOCAL, rondaActual || '1'); } catch (e) { /* sin almacenamiento */ }
 
   llenarMapas(['encuesta1']);
   $('etiquetaMapa').hidden = true;
@@ -920,6 +926,8 @@ function entrarEncuesta(nombre) {
   selModo.value = 'desafio';
   $('participante').textContent = nombre + ' · Encuesta';
   $('barraEncuesta').hidden = false;
+  $('btnReiniciar').hidden = true;
+  $('bloqueResultados').hidden = true;
   cargarMapa('encuesta1');
   selOrigen.disabled = true;
   selDestino.disabled = true;
@@ -934,6 +942,7 @@ function salirEncuesta() {
   $('etiquetaMapa').hidden = false;
   $('etiquetaModo').hidden = false;
   $('btnSorteo').hidden = false;
+  $('btnReiniciar').hidden = false;
   selOrigen.disabled = false;
   selDestino.disabled = false;
   const claves = mapasNormales();
@@ -961,7 +970,7 @@ $('formNombre').addEventListener('submit', function (e) {
       $('dlgEncuesta').close();
       entrarEncuesta(nombre);
     } else if (r.estado === 409) {
-      try { localStorage.setItem(CLAVE_LOCAL, '1'); } catch (e2) { /* sin almacenamiento */ }
+      try { localStorage.setItem(CLAVE_LOCAL, rondaActual || '1'); } catch (e2) { /* sin almacenamiento */ }
       $('errorNombre').textContent = 'Esta persona ya hizo la encuesta. Solo se puede entrar una vez.';
       actualizarEstadoEncuesta();
     } else {
@@ -974,10 +983,60 @@ $('formNombre').addEventListener('submit', function (e) {
   });
 });
 
-$('btnVolver').addEventListener('click', salirEncuesta);
+// Lista de participantes: quién acertó la ruta más corta y quién no
+let temporizadorResultados = null;
+
+function cargarResultados() {
+  return fetch('/api/encuesta/resultados').then(function (r) { return r.json(); }).then(function (lista) {
+    const cuerpo = $('tablaResultados');
+    cuerpo.textContent = '';
+    if (!lista.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 3;
+      td.textContent = 'Todavía no hay participantes.';
+      tr.appendChild(td);
+      cuerpo.appendChild(tr);
+      return;
+    }
+    lista.forEach(function (p) {
+      const tr = document.createElement('tr');
+      const nombre = document.createElement('td');
+      const resultado = document.createElement('td');
+      const intentos = document.createElement('td');
+      nombre.textContent = p.nombre;                       // textContent: seguro con cualquier nombre
+      if (p.estado === 'bien') { resultado.textContent = '✅ Acertó'; resultado.className = 'ok'; }
+      else if (p.estado === 'mal') { resultado.textContent = '❌ No acertó'; resultado.className = 'mal'; }
+      else { resultado.textContent = '⏳ No llegó al destino'; }
+      intentos.textContent = p.intentos;
+      tr.appendChild(nombre); tr.appendChild(resultado); tr.appendChild(intentos);
+      cuerpo.appendChild(tr);
+    });
+  }).catch(function () { /* si falla, se reintenta en el siguiente ciclo */ });
+}
+
+function mostrarResultados() {
+  $('bloqueResultados').hidden = false;
+  cargarResultados();
+  clearInterval(temporizadorResultados);
+  temporizadorResultados = setInterval(cargarResultados, 5000);   // se actualiza solo
+}
+
+function acabarEncuesta() {
+  if (!confirm('¿Acabar la encuesta? Ya no podrás volver a entrar.')) return;
+  salirEncuesta();
+  mostrarResultados();
+}
+
+$('btnVolver').addEventListener('click', acabarEncuesta);
 
 // ¡Arrancamos! El entorno aparece normal, sin la encuesta.
 $('valorVelocidad').textContent = milisegundos() + ' ms';
 llenarMapas(mapasNormales());
 cargarMapa(mapasNormales()[0]);
 actualizarEstadoEncuesta();
+fetch('/api/encuesta/estado').then(function (r) { return r.json(); }).then(function (d) {
+  rondaActual = String(d.ronda);
+  actualizarEstadoEncuesta();
+  if (yaHizoEncuesta()) mostrarResultados();
+}).catch(function () { /* sin servidor: nada que hacer */ });

@@ -4,6 +4,8 @@
 //  POST /api/encuesta/entrar     { nombre, clienteId } -> 201 | 409 si ya participó
 //  POST /api/encuesta/resultado  { nombre, clienteId, ruta, costo, mejor, optima, vioSolucion }
 //  GET  /api/encuesta/lista      -> participantes guardados (solo desde esta computadora)
+//  GET  /api/encuesta/estado     -> { ronda }  (cambia al reiniciar la encuesta)
+//  POST /api/encuesta/reiniciar  -> borra todo y empieza otra ronda (ver ADMIN_CLAVE)
 // Los datos quedan en datos/encuestas.json
 
 const http = require('http');
@@ -17,11 +19,17 @@ const TIPOS = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=
 const PUBLICOS = ['index.html', 'style.css', 'script.js'];
 
 fs.mkdirSync(CARPETA_DATOS, { recursive: true });
+const ADMIN_CLAVE = process.env.ADMIN_CLAVE || '';   // clave para reiniciar desde fuera del servidor
 let participantes = [];
-try { participantes = JSON.parse(fs.readFileSync(ARCHIVO, 'utf8')); } catch (e) { participantes = []; }
+let ronda = String(Date.now());
+try {
+  const guardado = JSON.parse(fs.readFileSync(ARCHIVO, 'utf8'));
+  if (Array.isArray(guardado)) participantes = guardado;           // formato antiguo
+  else { participantes = guardado.participantes || []; ronda = String(guardado.ronda || ronda); }
+} catch (e) { participantes = []; }
 
 function guardar() {
-  fs.writeFileSync(ARCHIVO + '.tmp', JSON.stringify(participantes, null, 2));
+  fs.writeFileSync(ARCHIVO + '.tmp', JSON.stringify({ ronda: ronda, participantes: participantes }, null, 2));
   fs.renameSync(ARCHIVO + '.tmp', ARCHIVO);
 }
 
@@ -79,6 +87,23 @@ http.createServer(function (req, res) {
     const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].indexOf(req.socket.remoteAddress) >= 0;
     if (!local) return responder(res, 403, { error: 'Solo desde el servidor.' });
     return responder(res, 200, participantes);
+  }
+
+  if (req.method === 'GET' && url === '/api/encuesta/estado') {
+    return responder(res, 200, { ronda: ronda });
+  }
+
+  // Reiniciar la encuesta para todos:
+  //   curl -X POST "http://localhost:3000/api/encuesta/reiniciar"
+  // (o, desde fuera del servidor, con ADMIN_CLAVE definida:  ...reiniciar?clave=TU_CLAVE)
+  if (req.method === 'POST' && url === '/api/encuesta/reiniciar') {
+    const clave = new URLSearchParams(req.url.split('?')[1] || '').get('clave');
+    const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].indexOf(req.socket.remoteAddress) >= 0 && !req.headers['x-forwarded-for'];
+    if (!local && !(ADMIN_CLAVE && clave === ADMIN_CLAVE)) return responder(res, 403, { error: 'No autorizado.' });
+    participantes = [];
+    ronda = String(Date.now());
+    guardar();
+    return responder(res, 200, { ok: true, ronda: ronda });
   }
 
   if (req.method === 'GET' && url === '/api/encuesta/resultados') {

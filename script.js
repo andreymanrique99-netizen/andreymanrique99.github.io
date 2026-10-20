@@ -927,15 +927,27 @@ function entrarEncuesta(nombre) {
   selModo.value = 'desafio';
   $('participante').textContent = nombre + ' · Encuesta';
   $('barraEncuesta').hidden = false;
-  document.querySelector('.control-instantaneo').hidden = true;
   $('btnReiniciar').hidden = true;
   $('bloqueResultados').hidden = true;
   cargarMapa('encuesta1');
-  // Ocultar por completo el control y la etiqueta "Instantáneo" durante la encuesta.
-  const controlInstantaneo = document.querySelector('.control-instantaneo');
-  if (controlInstantaneo) controlInstantaneo.hidden = true;
-  const etiquetaInstantaneo = document.querySelector('label[for="instantaneo"]');
-  if (etiquetaInstantaneo) etiquetaInstantaneo.hidden = true;
+  // Eliminar por completo el control «Instantáneo» de la interfaz de la encuesta.
+  const entradaInstantaneo = $('instantaneo');
+  if (entradaInstantaneo) {
+    const contenedor = entradaInstantaneo.closest('.control-instantaneo');
+    if (contenedor) {
+      contenedor.remove();
+    } else {
+      const etiqueta = entradaInstantaneo.closest('label');
+      if (etiqueta) etiqueta.remove();
+      else entradaInstantaneo.remove();
+    }
+  }
+  document.querySelectorAll('.control-instantaneo, label[for="instantaneo"]').forEach(elemento => elemento.remove());
+  document.querySelectorAll('label, span, div').forEach(elemento => {
+    if (elemento.children.length === 0 && elemento.textContent.trim().toLowerCase() === 'instantáneo') {
+      elemento.remove();
+    }
+  });
   selOrigen.disabled = true;
   selDestino.disabled = true;
   actualizarEstadoEncuesta();

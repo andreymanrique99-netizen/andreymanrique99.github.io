@@ -102,7 +102,7 @@ svg.clicable .nodo:hover circle { stroke: var(--actual); }
 /* ---- Estilo tipo Google Maps ---- */
 :root {
   --tierra: #f1efe9; --parque: #c8e6c0; --agua: #aad3df; --via: #ffffff; --borde-via: #d3d0c8;
-  --ruta: #00a650; --normal: #ffffff; --calle: #9aa0a6;
+  --ruta: #a60000; --normal: #ffffff; --calle: #9aa0a6;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -218,3 +218,46 @@ button:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px
   font-size: .85rem;
 }
 .selector-mapa-inferior select { width: 100%; }
+
+/* Pantallas de nombre y de elección de encuesta */
+.pantalla { max-width: 480px; margin: 1rem auto; }
+.pantalla form { display: flex; flex-direction: column; gap: .6rem; }
+.pantalla label { font-size: .95rem; color: var(--suave); }
+.pantalla input[type="text"] {
+  font: inherit; padding: .5rem .7rem; min-height: 44px; border-radius: 6px;
+  border: 1px solid var(--borde); background: var(--papel); color: var(--texto);
+}
+.botones-encuesta { display: flex; flex-wrap: wrap; gap: .75rem; }
+.botones-encuesta button { flex: 1 1 140px; font-size: 1.05rem; }
+.barra-participante { justify-content: space-between; align-items: center; }
+
+
+/* ---- Encuesta ---- */
+.btn-encuesta, .btn-link {
+  display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; margin-top: .6rem;
+  padding: .4rem .9rem; border-radius: 6px; background: var(--acento); color: #fff;
+  text-decoration: none; font-weight: bold;
+}
+.btn-link.sec { background: var(--papel); color: var(--texto); border: 1px solid var(--borde); }
+input[type="text"] {
+  font: inherit; padding: .4rem .7rem; min-height: 44px; border-radius: 6px;
+  border: 1px solid var(--borde); background: var(--papel); color: var(--texto); width: min(100%, 320px);
+}
+.encuesta-main { grid-template-columns: 1fr; }
+.encuesta-main .panel + .panel { margin-top: 0; }
+.aviso { font-size: .85rem; color: var(--suave); margin: .25rem 0 .75rem; }
+.error { color: var(--ruta); font-weight: bold; min-height: 1.5rem; }
+.ok { color: var(--acento); font-weight: bold; }
+.mal { color: var(--ruta); font-weight: bold; }
+.destino-aro { fill: none; stroke: #ea4335; stroke-width: 4; pointer-events: none; }
+.tabla-resultados td, .tabla-resultados th { white-space: nowrap; }
+.tabla-resultados td.ruta-col { white-space: normal; word-break: break-word; }
+tr.fila-mia { background: color-mix(in srgb, var(--actual) 25%, transparent); font-weight: bold; }
+
+/* ---- Botón de encuesta bajo el mapa y diálogo del nombre ---- */
+.zona-encuesta { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: .75rem; padding-top: .75rem; border-top: 1px solid var(--borde); }
+.zona-encuesta .aviso { margin: 0; }
+.dialogo { border: 1px solid var(--borde); border-radius: 10px; background: var(--papel); color: var(--texto); padding: 1.25rem; width: min(92vw, 440px); }
+.dialogo::backdrop { background: rgba(0, 0, 0, .45); }
+.dialogo form { display: flex; flex-direction: column; gap: .6rem; }
+.dialogo label { font-size: .95rem; color: var(--suave); }

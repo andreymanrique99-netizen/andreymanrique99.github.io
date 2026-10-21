@@ -413,13 +413,14 @@ function acomodarConexiones(m, quitar, minimo, semilla) {
 
 // Encuesta 1: un barrio de 30 puntos con la misma forma irregular del «Barrio sencillo»,
 // pero más grande y con más calles. Nodos A, B, C... Z, AA, AB, AC, AD.
-// Origen = A (arriba a la izquierda) y destino = AD (abajo a la derecha).
+// Origen = A (arriba a la izquierda) y destino = X.
 // Para otro barrio distinto, cambia la semilla (el 31) por otro número.
 function crearBarrio30(semilla) {
   const azar = crearAzar(semilla);
   const columnas = 6, filas = 5;
   const nodos = {}, calles = [];
   const id = function (fila, col) { return nombreLetra(fila * columnas + col); };
+  const DESTINO = 'X';   // nodo de destino (cámbialo por otra letra si quieres)
 
   // Nodos: cuadrícula de 6 x 5 con movimiento al azar, cada fila algo corrida.
   for (let fila = 0; fila < filas; fila++) {
@@ -433,8 +434,8 @@ function crearBarrio30(semilla) {
 
   // Nodos ALEJADOS: 7 puntos se separan bien lejos del resto (hacia afuera del mapa).
   // Siguen unidos por sus calles normales (que quedan más largas); no se aíslan.
-  // El origen (A) y el destino (AD) no se mueven.
-  const movibles = Object.keys(nodos).filter(function (n) { return n !== id(0, 0) && n !== id(filas - 1, columnas - 1); });
+  // El origen (A) y el destino (X) no se mueven.
+  const movibles = Object.keys(nodos).filter(function (n) { return n !== id(0, 0) && n !== DESTINO; });
   let cx = 0, cy = 0;
   movibles.forEach(function (n) { cx += nodos[n].x; cy += nodos[n].y; });
   cx /= movibles.length; cy /= movibles.length;
@@ -490,11 +491,11 @@ function crearBarrio30(semilla) {
     }
   }
 
-  const mapaNuevo = { titulo: 'Encuesta 1', r: 18, origen: id(0, 0), destino: id(filas - 1, columnas - 1), nodos: nodos, calles: calles };
+  const mapaNuevo = { titulo: 'Encuesta 1', r: 18, origen: id(0, 0), destino: DESTINO, nodos: nodos, calles: calles };
 
   // Calles extra entre nodos cercanos (cruzan otras calles, pero no pasan sobre un nodo):
-  // dan más caminos posibles. Cambia el 14 para tener más o menos.
-  return agregarConexiones(mapaNuevo, 14, semilla + 1);
+  // dan más caminos posibles. Cambia el 19 para tener más o menos.
+  return agregarConexiones(mapaNuevo, 19, semilla + 1);
 }
 
 const mapaEncuesta1 = crearBarrio30(31);

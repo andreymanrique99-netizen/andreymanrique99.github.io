@@ -425,9 +425,13 @@ function crearBarrio30(semilla) {
   // para que se vea desordenado como el barrio sencillo.
   for (let fila = 0; fila < filas; fila++) {
     for (let col = 0; col < columnas; col++) {
+      // Algunos nodos (≈30%) se alejan un poco más de su sitio para que haya zonas separadas
+      const alejado = azar() < 0.3;
+      const extraX = alejado ? (azar() - 0.5) * 70 : 0;
+      const extraY = alejado ? (azar() - 0.5) * 60 : 0;
       nodos[id(fila, col)] = {
-        x: Math.round(70 + col * 135 + (fila % 2) * 25 + (azar() - 0.5) * 60),
-        y: Math.round(60 + fila * 105 + (azar() - 0.5) * 55)
+        x: Math.round(70 + col * 155 + (fila % 2) * 30 + (azar() - 0.5) * 70 + extraX),
+        y: Math.round(60 + fila * 120 + (azar() - 0.5) * 60 + extraY)
       };
     }
   }
@@ -457,7 +461,7 @@ function crearBarrio30(semilla) {
   };
   let quitadas = 0;
   base.slice().sort(function () { return azar() - 0.5; }).forEach(function (c) {
-    if (quitadas >= 6) return;
+    if (quitadas >= 3) return;
     const resto = base.filter(function (k) { return k !== c; });
     if (cuantasZonas(resto) !== 1) return;
     base.splice(base.indexOf(c), 1);
@@ -468,7 +472,7 @@ function crearBarrio30(semilla) {
   // Diagonales: en la mayoría de las manzanas (alternadas para que no se crucen)
   for (let fila = 0; fila < filas - 1; fila++) {
     for (let col = 0; col < columnas - 1; col++) {
-      if (azar() < 0.3) continue;
+      if (azar() < 0.1) continue;
       const par = (fila + col) % 2 === 0;
       const a = par ? id(fila, col) : id(fila, col + 1);
       const b = par ? id(fila + 1, col + 1) : id(fila + 1, col);
@@ -476,7 +480,11 @@ function crearBarrio30(semilla) {
     }
   }
 
-  return { titulo: 'Encuesta 1', r: 18, origen: id(0, 0), destino: id(filas - 1, columnas - 1), nodos: nodos, calles: calles };
+  const mapaNuevo = { titulo: 'Encuesta 1', r: 18, origen: id(0, 0), destino: id(filas - 1, columnas - 1), nodos: nodos, calles: calles };
+
+  // Calles extra entre nodos cercanos (cruzan otras calles, pero no pasan sobre un nodo):
+  // dan más caminos posibles. Cambia el 14 para tener más o menos.
+  return agregarConexiones(mapaNuevo, 14, semilla + 1);
 }
 
 const mapaEncuesta1 = crearBarrio30(31);

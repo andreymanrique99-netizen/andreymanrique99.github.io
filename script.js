@@ -425,14 +425,20 @@ function crearBarrio30(semilla) {
   // para que se vea desordenado como el barrio sencillo.
   for (let fila = 0; fila < filas; fila++) {
     for (let col = 0; col < columnas; col++) {
-      // Algunos nodos (≈30%) se alejan un poco más de su sitio para que haya zonas separadas
-      const alejado = azar() < 0.3;
-      const extraX = alejado ? (azar() - 0.5) * 70 : 0;
-      const extraY = alejado ? (azar() - 0.5) * 60 : 0;
-      nodos[id(fila, col)] = {
-        x: Math.round(70 + col * 155 + (fila % 2) * 30 + (azar() - 0.5) * 70 + extraX),
-        y: Math.round(60 + fila * 120 + (azar() - 0.5) * 60 + extraY)
-      };
+      let x = 70 + col * 155 + (fila % 2) * 30 + (azar() - 0.5) * 70;
+      let y = 60 + fila * 120 + (azar() - 0.5) * 60;
+
+      // Algunos nodos del borde (≈45%) quedan alejados del resto, hacia afuera.
+      // Siguen unidos por sus calles normales (más largas), no quedan aislados.
+      const esOrigenODestino = (fila === 0 && col === 0) || (fila === filas - 1 && col === columnas - 1);
+      if (!esOrigenODestino && azar() < 0.45) {
+        const empuje = 45 + azar() * 45;
+        if (col === 0) x -= empuje;
+        else if (col === columnas - 1) x += empuje;
+        if (fila === 0) y -= empuje * 0.8;
+        else if (fila === filas - 1) y += empuje * 0.8;
+      }
+      nodos[id(fila, col)] = { x: Math.round(x), y: Math.round(y) };
     }
   }
 

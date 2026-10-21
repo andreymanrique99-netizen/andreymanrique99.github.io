@@ -250,6 +250,51 @@ function usarLetras(m) {
   return m;
 }
 
+// Agrega calles extra entre nodos cercanos (pueden cruzarse con otras, pero no pasan sobre otro nodo),
+// para que haya más caminos posibles y sea más fácil equivocarse de nodo.
+function agregarConexiones(m, cuantas, semilla) {
+  const azar = crearAzar(semilla);
+  const ids = Object.keys(m.nodos);
+  const existe = {};
+  m.calles.forEach(function (c) { existe[c[0] + '|' + c[1]] = true; existe[c[1] + '|' + c[0]] = true; });
+
+  function pasaPorUnNodo(a, b) {      // ¿la calle a-b roza otro nodo?
+    const A = m.nodos[a], B = m.nodos[b];
+    const largo2 = Math.pow(B.x - A.x, 2) + Math.pow(B.y - A.y, 2);
+    return ids.some(function (k) {
+      if (k === a || k === b) return false;
+      const P = m.nodos[k];
+      let t = ((P.x - A.x) * (B.x - A.x) + (P.y - A.y) * (B.y - A.y)) / largo2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(P.x - (A.x + t * (B.x - A.x)), P.y - (A.y + t * (B.y - A.y))) < 16;
+    });
+  }
+
+  // Parejas cercanas que todavía no tienen calle, de la más corta a la más larga (con algo de azar)
+  const candidatas = [];
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const a = ids[i], b = ids[j];
+      if (existe[a + '|' + b]) continue;
+      const d = Math.hypot(m.nodos[a].x - m.nodos[b].x, m.nodos[a].y - m.nodos[b].y);
+      if (d <= 190) candidatas.push({ a: a, b: b, d: d, orden: d * (0.8 + azar() * 0.4) });
+    }
+  }
+  candidatas.sort(function (p, q) { return p.orden - q.orden; });
+
+  let agregadas = 0;
+  candidatas.forEach(function (c) {
+    if (agregadas >= cuantas) return;
+    if (pasaPorUnNodo(c.a, c.b)) return;
+    // Distancia parecida a lo que mide en el dibujo, con algo de variación
+    const peso = Math.max(1, Math.round(c.d / 20) + Math.floor(azar() * 4) - 1);
+    m.calles.push([c.a, c.b, peso]);
+    existe[c.a + '|' + c.b] = existe[c.b + '|' + c.a] = true;
+    agregadas++;
+  });
+  return m;
+}
+
 // Las ciudades generadas (ahora incluye la de 20 nodos)
 [5, 10, 20, 50, 100, 150, 200, 500, 1000, 5000, 10000, 20000].forEach(function (n, posicion) {
   mapas['ciudad' + n] = crearCiudad(n, 7 + posicion * 13);
@@ -258,7 +303,8 @@ function usarLetras(m) {
 // Encuesta 1: un mapa nuevo de 30 puntos, con letras en vez de números
 // (es distinto de la ciudad de 20 nodos que está en la lista).
 // Origen = A (primer nodo) y destino = AD (último nodo), en la otra punta del mapa.
-const mapaEncuesta1 = usarLetras(crearCiudad(30, 101));
+// 30 calles extra (cambia el 30 para tener más o menos conexiones)
+const mapaEncuesta1 = usarLetras(agregarConexiones(crearCiudad(30, 101), 30, 5));
 mapaEncuesta1.titulo = 'Encuesta 1';
 mapas.encuesta1 = mapaEncuesta1;
 

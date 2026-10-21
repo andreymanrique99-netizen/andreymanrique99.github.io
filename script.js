@@ -328,6 +328,84 @@ function agregarConexionesLargas(m, cuantas, semilla, distanciaMinima) {
   return m;
 }
 
+// Reparte mejor las calles: quita algunas donde hay demasiadas y pone otras donde casi no hay.
+//  - quitar: cuántas calles quitar (solo entre nodos que ya tienen muchas; el mapa sigue conectado)
+//  - minimo: cada nodo debe quedar con al menos esta cantidad de calles
+function acomodarConexiones(m, quitar, minimo, semilla) {
+  const azar = crearAzar(semilla);
+  const ids = Object.keys(m.nodos);
+
+  function grados() {
+    const g = {};
+    ids.forEach(function (id) { g[id] = 0; });
+    m.calles.forEach(function (c) { g[c[0]]++; g[c[1]]++; });
+    return g;
+  }
+  function conectado(calles) {       // ¿se puede llegar a todos los nodos?
+    const ady = {};
+    ids.forEach(function (id) { ady[id] = []; });
+    calles.forEach(function (c) { ady[c[0]].push(c[1]); ady[c[1]].push(c[0]); });
+    const visto = {}; const pila = [ids[0]]; visto[ids[0]] = true;
+    let n = 1;
+    while (pila.length) {
+      ady[pila.pop()].forEach(function (v) { if (!visto[v]) { visto[v] = true; n++; pila.push(v); } });
+    }
+    return n === ids.length;
+  }
+  function rozaNodo(a, b) {          // ¿la calle a-b pasa casi encima de otro nodo?
+    const A = m.nodos[a], B = m.nodos[b];
+    const largo2 = Math.pow(B.x - A.x, 2) + Math.pow(B.y - A.y, 2);
+    return ids.some(function (k) {
+      if (k === a || k === b) return false;
+      const P = m.nodos[k];
+      let t = ((P.x - A.x) * (B.x - A.x) + (P.y - A.y) * (B.y - A.y)) / largo2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(P.x - (A.x + t * (B.x - A.x)), P.y - (A.y + t * (B.y - A.y))) < 16;
+    });
+  }
+
+  // 1. Quitar calles entre nodos que ya tienen muchas (las más cargadas primero)
+  let g = grados();
+  const lista = m.calles.slice().sort(function (p, q) {
+    return (g[q[0]] + g[q[1]] + azar() * 2) - (g[p[0]] + g[p[1]] + azar() * 2);
+  });
+  let quitadas = 0;
+  lista.forEach(function (c) {
+    if (quitadas >= quitar) return;
+    if (g[c[0]] <= minimo + 1 || g[c[1]] <= minimo + 1) return;      // no dejar nodos pelados
+    const resto = m.calles.filter(function (k) { return k !== c; });
+    if (!conectado(resto)) return;
+    m.calles = resto;
+    g[c[0]]--; g[c[1]]--;
+    quitadas++;
+  });
+
+  // 2. Poner calles donde casi no hay: nodos con pocas calles, hacia sus vecinos cercanos
+  //    que también tengan pocas (así se reparte parejo).
+  const existe = {};
+  m.calles.forEach(function (c) { existe[c[0] + '|' + c[1]] = true; existe[c[1] + '|' + c[0]] = true; });
+  const pobres = ids.filter(function (id) { return g[id] < minimo; })
+    .sort(function (a, b) { return g[a] - g[b]; });
+  pobres.forEach(function (a) {
+    const cercanos = ids
+      .filter(function (b) { return b !== a && !existe[a + '|' + b]; })
+      .map(function (b) {
+        const d = Math.hypot(m.nodos[a].x - m.nodos[b].x, m.nodos[a].y - m.nodos[b].y);
+        return { b: b, d: d, orden: d + g[b] * 25 };                // mejor los cercanos y con pocas calles
+      })
+      .filter(function (c) { return c.d <= 260 && !rozaNodo(a, c.b); })
+      .sort(function (p, q) { return p.orden - q.orden; });
+    cercanos.forEach(function (c) {
+      if (g[a] >= minimo) return;
+      const peso = Math.max(1, Math.round(c.d / 20) + Math.floor(azar() * 4) - 1);
+      m.calles.push([a, c.b, peso]);
+      existe[a + '|' + c.b] = existe[c.b + '|' + a] = true;
+      g[a]++; g[c.b]++;
+    });
+  });
+  return m;
+}
+
 // Las ciudades generadas (ahora incluye la de 20 nodos)
 [5, 10, 20, 50, 100, 150, 200, 500, 1000, 5000, 10000, 20000].forEach(function (n, posicion) {
   mapas['ciudad' + n] = crearCiudad(n, 7 + posicion * 13);
@@ -340,6 +418,7 @@ function agregarConexionesLargas(m, cuantas, semilla, distanciaMinima) {
 const mapaEncuesta1 = crearCiudad(30, 101);
 agregarConexiones(mapaEncuesta1, 30, 5);                // calles extra entre nodos cercanos
 agregarConexionesLargas(mapaEncuesta1, 6, 11, 300);     // 6 calles largas entre nodos lejanos (distancia mínima 300)
+acomodarConexiones(mapaEncuesta1, 10, 4, 21);      // quita 10 donde hay de más y pone donde hay menos de 4 calles
 usarLetras(mapaEncuesta1);
 mapaEncuesta1.titulo = 'Encuesta 1';
 mapas.encuesta1 = mapaEncuesta1;

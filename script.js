@@ -413,13 +413,28 @@ function acomodarConexiones(m, quitar, minimo, semilla) {
 
 // TRAMPA SUTIL: la ruta que se ve más directa en el dibujo (la "obvia") NO es la mejor,
 // pero tampoco lo parece: cuesta apenas 1 o 2 más que la ruta ganadora.
-// La ruta ganadora es un desvío con más calles, y todas sus calles tienen distancias normales
-// (3 a 5), sin números raros que la delaten. Las demás calles son un poco más caras.
+// La ruta ganadora es un desvío PERIFÉRICO (evita el centro del mapa y los nodos de la ruta obvia),
+// con más calles, y todas sus calles tienen distancias normales (3 a 5).
+// Cebo: la ruta obvia empieza con calles baratas y termina con calles caras;
+// la ganadora hace lo contrario (empieza cara y termina barata).
 function ponerTrampa(m, semilla) {
   const azar = crearAzar(semilla);
   const clave = function (u, v) { return u < v ? u + '|' + v : v + '|' + u; };
   const largo = function (c) {
     return Math.hypot(m.nodos[c[0]].x - m.nodos[c[1]].x, m.nodos[c[0]].y - m.nodos[c[1]].y);
+  };
+
+  // Centro del mapa: los nodos cercanos a él son "el camino típico por el medio"
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  Object.keys(m.nodos).forEach(function (id) {
+    minX = Math.min(minX, m.nodos[id].x); maxX = Math.max(maxX, m.nodos[id].x);
+    minY = Math.min(minY, m.nodos[id].y); maxY = Math.max(maxY, m.nodos[id].y);
+  });
+  const centroX = (minX + maxX) / 2, centroY = (minY + maxY) / 2;
+  const radioCentro = 0.3 * Math.min(maxX - minX, maxY - minY);   // más grande = evita una zona central mayor
+  const esCentral = function (id) {
+    return id !== m.origen && id !== m.destino &&
+      Math.hypot(m.nodos[id].x - centroX, m.nodos[id].y - centroY) < radioCentro;
   };
 
   // Dijkstra sencillo: costo(calle) = lo que cuesta cruzar esa calle (Infinity = prohibida)
@@ -460,15 +475,29 @@ function ponerTrampa(m, semilla) {
   const callesObvia = callesDe(obvia);
   const enObvia = {};
   callesObvia.forEach(function (c) { enObvia[clave(c[0], c[1])] = true; });
+  const nodoObvio = {};
+  obvia.forEach(function (n) { nodoObvio[n] = true; });
 
-  for (let intento = 0; intento < 400; intento++) {
+  for (let intento = 0; intento < 600; intento++) {
     m.calles.forEach(function (c, i) { c[2] = original[i]; });
 
-    // 1. La ruta ganadora: un desvío que no usa ninguna calle de la obvia y tiene más calles
+    // En los primeros 300 intentos la ganadora NO puede pasar por el centro
+    // ni por ningún nodo de la ruta obvia (solo comparte origen y destino).
+    const estricto = intento < 300;
+
+    // 1. La ruta ganadora: un desvío por la periferia, con más calles que la obvia
     const oculta = mejorRuta(function (c) {
-      return enObvia[clave(c[0], c[1])] ? Infinity : largo(c) * (0.8 + azar() * 0.8);
+      if (enObvia[clave(c[0], c[1])]) return Infinity;
+      if (estricto) {
+        for (let k = 0; k < 2; k++) {
+          const n = c[k];
+          if (esCentral(n)) return Infinity;
+          if (nodoObvio[n] && n !== m.origen && n !== m.destino) return Infinity;
+        }
+      }
+      return largo(c) * (0.8 + azar() * 0.8);
     }).camino;
-    if (oculta.length < obvia.length + 1 || oculta.length > 11) continue;
+    if (oculta.length < obvia.length + 1 || oculta.length > 13) continue;
     const callesOculta = callesDe(oculta);
     const enOculta = {};
     callesOculta.forEach(function (c) { enOculta[clave(c[0], c[1])] = true; });
@@ -479,11 +508,14 @@ function ponerTrampa(m, semilla) {
       if (!enOculta[k] && !enObvia[k]) c[2] = Math.max(c[2], 5);
     });
 
-    // 3. La ganadora: distancias normales (3 a 5)
+    // 3. La ganadora: distancias normales (3 a 5), con las más CARAS al principio
+    //    (así no parece buena opción si solo miras la primera calle)
+    const pesosOculta = callesOculta.map(function () { return 3 + Math.floor(azar() * 3); });
+    pesosOculta.sort(function (p, q) { return q - p; });
     let costoOculta = 0;
-    callesOculta.forEach(function (c) { c[2] = 3 + Math.floor(azar() * 3); costoOculta += c[2]; });
+    callesOculta.forEach(function (c, i) { c[2] = pesosOculta[i]; costoOculta += c[2]; });
 
-    // 4. La obvia cuesta solo 1 o 2 más que la ganadora, repartido entre sus calles
+    // 4. La obvia cuesta solo 1 o 2 más que la ganadora
     const objetivo = costoOculta + 1 + Math.floor(azar() * 2);
     const w = callesObvia.map(function () { return 4; });
     let suma = 4 * w.length, vueltas = 0;
@@ -493,6 +525,8 @@ function ponerTrampa(m, semilla) {
       else if (suma > objetivo && w[i] > 2) { w[i]--; suma--; }
     }
     if (suma !== objetivo) continue;
+    // El cebo: calles BARATAS al principio y caras al final
+    w.sort(function (p, q) { return p - q; });
     callesObvia.forEach(function (c, i) { c[2] = w[i]; });
 
     // 5. Comprobar que ninguna otra combinación de calles gana a la ruta oculta

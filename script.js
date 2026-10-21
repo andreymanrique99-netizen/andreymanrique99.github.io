@@ -295,6 +295,39 @@ function agregarConexiones(m, cuantas, semilla) {
   return m;
 }
 
+// Agrega calles LARGAS entre nodos lejanos que no se tocan (por ejemplo I con Z).
+// Cada nodo recibe como mucho una de estas calles, así que ninguna comparte nodos con otra.
+// No unen directamente el origen con el destino, para que no haya un atajo trivial.
+function agregarConexionesLargas(m, cuantas, semilla, distanciaMinima) {
+  const azar = crearAzar(semilla);
+  const ids = Object.keys(m.nodos);
+  const usados = {};
+  const existe = {};
+  m.calles.forEach(function (c) { existe[c[0] + '|' + c[1]] = true; existe[c[1] + '|' + c[0]] = true; });
+
+  const candidatas = [];
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const a = ids[i], b = ids[j];
+      if (existe[a + '|' + b]) continue;
+      if ((a === m.origen && b === m.destino) || (a === m.destino && b === m.origen)) continue;
+      const d = Math.hypot(m.nodos[a].x - m.nodos[b].x, m.nodos[a].y - m.nodos[b].y);
+      if (d >= distanciaMinima) candidatas.push({ a: a, b: b, d: d, orden: azar() });
+    }
+  }
+  candidatas.sort(function (p, q) { return p.orden - q.orden; });   // al azar
+
+  let agregadas = 0;
+  candidatas.forEach(function (c) {
+    if (agregadas >= cuantas || usados[c.a] || usados[c.b]) return;
+    const peso = Math.max(3, Math.round(c.d / 20) + Math.floor(azar() * 4));
+    m.calles.push([c.a, c.b, peso]);
+    usados[c.a] = usados[c.b] = true;
+    agregadas++;
+  });
+  return m;
+}
+
 // Las ciudades generadas (ahora incluye la de 20 nodos)
 [5, 10, 20, 50, 100, 150, 200, 500, 1000, 5000, 10000, 20000].forEach(function (n, posicion) {
   mapas['ciudad' + n] = crearCiudad(n, 7 + posicion * 13);
@@ -304,7 +337,10 @@ function agregarConexiones(m, cuantas, semilla) {
 // (es distinto de la ciudad de 20 nodos que está en la lista).
 // Origen = A (primer nodo) y destino = AD (último nodo), en la otra punta del mapa.
 // 30 calles extra (cambia el 30 para tener más o menos conexiones)
-const mapaEncuesta1 = usarLetras(agregarConexiones(crearCiudad(30, 101), 30, 5));
+const mapaEncuesta1 = crearCiudad(30, 101);
+agregarConexiones(mapaEncuesta1, 30, 5);                // calles extra entre nodos cercanos
+agregarConexionesLargas(mapaEncuesta1, 6, 11, 300);     // 6 calles largas entre nodos lejanos (distancia mínima 300)
+usarLetras(mapaEncuesta1);
 mapaEncuesta1.titulo = 'Encuesta 1';
 mapas.encuesta1 = mapaEncuesta1;
 

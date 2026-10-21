@@ -411,16 +411,45 @@ function acomodarConexiones(m, quitar, minimo, semilla) {
   mapas['ciudad' + n] = crearCiudad(n, 7 + posicion * 13);
 });
 
-// Encuesta 1: un mapa nuevo de 30 puntos, con letras en vez de números
-// (es distinto de la ciudad de 20 nodos que está en la lista).
-// Origen = A (primer nodo) y destino = AD (último nodo), en la otra punta del mapa.
-// 30 calles extra (cambia el 30 para tener más o menos conexiones)
-const mapaEncuesta1 = crearCiudad(30, 101);
-agregarConexiones(mapaEncuesta1, 30, 5);                // calles extra entre nodos cercanos
-agregarConexionesLargas(mapaEncuesta1, 6, 11, 300);     // 6 calles largas entre nodos lejanos (distancia mínima 300)
-acomodarConexiones(mapaEncuesta1, 10, 4, 21);      // quita 10 donde hay de más y pone donde hay menos de 4 calles
-usarLetras(mapaEncuesta1);
-mapaEncuesta1.titulo = 'Encuesta 1';
+// Encuesta 1: un barrio de 30 puntos, parecido al «Barrio sencillo» pero más grande
+// y con muchas más calles (69). Nodos A, B, C... Z, AA, AB, AC, AD.
+// Origen = A (esquina de arriba a la izquierda) y destino = AD (esquina de abajo a la derecha).
+// Para otro barrio distinto, cambia la semilla (el 31) por otro número.
+function crearBarrio30(semilla) {
+  const azar = crearAzar(semilla);
+  const columnas = 6, filas = 5;
+  const nodos = {}, calles = [];
+  const id = function (fila, col) { return nombreLetra(fila * columnas + col); };
+
+  // Nodos: una cuadrícula de 6 x 5 con cada punto movido un poco, como en el barrio sencillo
+  for (let fila = 0; fila < filas; fila++) {
+    for (let col = 0; col < columnas; col++) {
+      nodos[id(fila, col)] = {
+        x: Math.round(70 + col * 130 + (azar() - 0.5) * 44),
+        y: Math.round(60 + fila * 105 + (azar() - 0.5) * 44)
+      };
+    }
+  }
+
+  // Distancia de cada calle: un número entre 2 y 9
+  const peso = function () { return 2 + Math.floor(azar() * 8); };
+
+  for (let fila = 0; fila < filas; fila++) {
+    for (let col = 0; col < columnas; col++) {
+      if (col < columnas - 1) calles.push([id(fila, col), id(fila, col + 1), peso()]);   // calle hacia la derecha
+      if (fila < filas - 1) calles.push([id(fila, col), id(fila + 1, col), peso()]);     // calle hacia abajo
+      // Una diagonal por manzana (alternadas para que no se crucen)
+      if (fila < filas - 1 && col < columnas - 1) {
+        if ((fila + col) % 2 === 0) calles.push([id(fila, col), id(fila + 1, col + 1), peso()]);
+        else calles.push([id(fila, col + 1), id(fila + 1, col), peso()]);
+      }
+    }
+  }
+
+  return { titulo: 'Encuesta 1', r: 18, origen: id(0, 0), destino: id(filas - 1, columnas - 1), nodos: nodos, calles: calles };
+}
+
+const mapaEncuesta1 = crearBarrio30(31);
 mapas.encuesta1 = mapaEncuesta1;
 
 

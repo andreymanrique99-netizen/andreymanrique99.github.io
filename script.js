@@ -411,9 +411,9 @@ function acomodarConexiones(m, quitar, minimo, semilla) {
   mapas['ciudad' + n] = crearCiudad(n, 7 + posicion * 13);
 });
 
-// Encuesta 1: un barrio de 30 puntos, parecido al «Barrio sencillo» pero más grande
-// y con muchas más calles (69). Nodos A, B, C... Z, AA, AB, AC, AD.
-// Origen = A (esquina de arriba a la izquierda) y destino = AD (esquina de abajo a la derecha).
+// Encuesta 1: un barrio de 30 puntos con la misma forma irregular del «Barrio sencillo»,
+// pero más grande y con más calles. Nodos A, B, C... Z, AA, AB, AC, AD.
+// Origen = A (arriba a la izquierda) y destino = AD (abajo a la derecha).
 // Para otro barrio distinto, cambia la semilla (el 31) por otro número.
 function crearBarrio30(semilla) {
   const azar = crearAzar(semilla);
@@ -421,28 +421,58 @@ function crearBarrio30(semilla) {
   const nodos = {}, calles = [];
   const id = function (fila, col) { return nombreLetra(fila * columnas + col); };
 
-  // Nodos: una cuadrícula de 6 x 5 con cada punto movido un poco, como en el barrio sencillo
+  // Nodos: cuadrícula de 6 x 5 muy "movida", cada fila algo corrida,
+  // para que se vea desordenado como el barrio sencillo.
   for (let fila = 0; fila < filas; fila++) {
     for (let col = 0; col < columnas; col++) {
       nodos[id(fila, col)] = {
-        x: Math.round(70 + col * 130 + (azar() - 0.5) * 44),
-        y: Math.round(60 + fila * 105 + (azar() - 0.5) * 44)
+        x: Math.round(70 + col * 135 + (fila % 2) * 25 + (azar() - 0.5) * 60),
+        y: Math.round(60 + fila * 105 + (azar() - 0.5) * 55)
       };
     }
   }
 
-  // Distancia de cada calle: un número entre 2 y 9
-  const peso = function () { return 2 + Math.floor(azar() * 8); };
+  // Distancia de la calle: parecida a lo que mide en el dibujo (entre 2 y 9)
+  const peso = function (a, b) {
+    const d = Math.hypot(nodos[a].x - nodos[b].x, nodos[a].y - nodos[b].y);
+    return Math.max(2, Math.min(9, Math.round(d / 22) + Math.floor(azar() * 3) - 1));
+  };
 
+  // Calles de la cuadrícula (derecha y abajo)
+  const base = [];
   for (let fila = 0; fila < filas; fila++) {
     for (let col = 0; col < columnas; col++) {
-      if (col < columnas - 1) calles.push([id(fila, col), id(fila, col + 1), peso()]);   // calle hacia la derecha
-      if (fila < filas - 1) calles.push([id(fila, col), id(fila + 1, col), peso()]);     // calle hacia abajo
-      // Una diagonal por manzana (alternadas para que no se crucen)
-      if (fila < filas - 1 && col < columnas - 1) {
-        if ((fila + col) % 2 === 0) calles.push([id(fila, col), id(fila + 1, col + 1), peso()]);
-        else calles.push([id(fila, col + 1), id(fila + 1, col), peso()]);
-      }
+      if (col < columnas - 1) base.push([id(fila, col), id(fila, col + 1)]);
+      if (fila < filas - 1) base.push([id(fila, col), id(fila + 1, col)]);
+    }
+  }
+
+  // Quitar unas pocas calles al azar (sin dejar el mapa desconectado)
+  const cuantasZonas = function (calles) {
+    const raiz = {};
+    Object.keys(nodos).forEach(function (x) { raiz[x] = x; });
+    const buscar = function (x) { while (raiz[x] !== x) x = raiz[x]; return x; };
+    calles.forEach(function (c) { raiz[buscar(c[0])] = buscar(c[1]); });
+    return new Set(Object.keys(nodos).map(buscar)).size;
+  };
+  let quitadas = 0;
+  base.slice().sort(function () { return azar() - 0.5; }).forEach(function (c) {
+    if (quitadas >= 6) return;
+    const resto = base.filter(function (k) { return k !== c; });
+    if (cuantasZonas(resto) !== 1) return;
+    base.splice(base.indexOf(c), 1);
+    quitadas++;
+  });
+  base.forEach(function (c) { calles.push([c[0], c[1], peso(c[0], c[1])]); });
+
+  // Diagonales: en la mayoría de las manzanas (alternadas para que no se crucen)
+  for (let fila = 0; fila < filas - 1; fila++) {
+    for (let col = 0; col < columnas - 1; col++) {
+      if (azar() < 0.3) continue;
+      const par = (fila + col) % 2 === 0;
+      const a = par ? id(fila, col) : id(fila, col + 1);
+      const b = par ? id(fila + 1, col + 1) : id(fila + 1, col);
+      calles.push([a, b, peso(a, b)]);
     }
   }
 

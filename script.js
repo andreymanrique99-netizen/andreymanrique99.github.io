@@ -421,26 +421,30 @@ function crearBarrio30(semilla) {
   const nodos = {}, calles = [];
   const id = function (fila, col) { return nombreLetra(fila * columnas + col); };
 
-  // Nodos: cuadrícula de 6 x 5 muy "movida", cada fila algo corrida,
-  // para que se vea desordenado como el barrio sencillo.
+  // Nodos: cuadrícula de 6 x 5 con movimiento al azar, cada fila algo corrida.
   for (let fila = 0; fila < filas; fila++) {
     for (let col = 0; col < columnas; col++) {
-      let x = 70 + col * 155 + (fila % 2) * 30 + (azar() - 0.5) * 70;
-      let y = 60 + fila * 120 + (azar() - 0.5) * 60;
-
-      // Algunos nodos del borde (≈45%) quedan alejados del resto, hacia afuera.
-      // Siguen unidos por sus calles normales (más largas), no quedan aislados.
-      const esOrigenODestino = (fila === 0 && col === 0) || (fila === filas - 1 && col === columnas - 1);
-      if (!esOrigenODestino && azar() < 0.45) {
-        const empuje = 45 + azar() * 45;
-        if (col === 0) x -= empuje;
-        else if (col === columnas - 1) x += empuje;
-        if (fila === 0) y -= empuje * 0.8;
-        else if (fila === filas - 1) y += empuje * 0.8;
-      }
-      nodos[id(fila, col)] = { x: Math.round(x), y: Math.round(y) };
+      nodos[id(fila, col)] = {
+        x: Math.round(70 + col * 140 + (fila % 2) * 25 + (azar() - 0.5) * 60),
+        y: Math.round(60 + fila * 110 + (azar() - 0.5) * 55)
+      };
     }
   }
+
+  // Nodos ALEJADOS: 7 puntos se separan bien lejos del resto (hacia afuera del mapa).
+  // Siguen unidos por sus calles normales (que quedan más largas); no se aíslan.
+  // El origen (A) y el destino (AD) no se mueven.
+  const movibles = Object.keys(nodos).filter(function (n) { return n !== id(0, 0) && n !== id(filas - 1, columnas - 1); });
+  let cx = 0, cy = 0;
+  movibles.forEach(function (n) { cx += nodos[n].x; cy += nodos[n].y; });
+  cx /= movibles.length; cy /= movibles.length;
+  movibles.slice().sort(function () { return azar() - 0.5; }).slice(0, 7).forEach(function (n) {
+    const dx = nodos[n].x - cx, dy = nodos[n].y - cy;
+    const largo = Math.hypot(dx, dy) || 1;
+    const empuje = 55 + azar() * 45;                    // entre 55 y 100 píxeles hacia afuera
+    nodos[n].x = Math.round(nodos[n].x + dx / largo * empuje);
+    nodos[n].y = Math.round(nodos[n].y + dy / largo * empuje);
+  });
 
   // Distancia de la calle: parecida a lo que mide en el dibujo (entre 2 y 9)
   const peso = function (a, b) {

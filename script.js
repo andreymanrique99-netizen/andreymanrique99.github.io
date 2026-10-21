@@ -411,6 +411,80 @@ function acomodarConexiones(m, quitar, minimo, semilla) {
   mapas['ciudad' + n] = crearCiudad(n, 7 + posicion * 13);
 });
 
+// TRAMPA: la ruta que parece más corta en el dibujo (la más recta de origen a destino)
+// empieza con calles baratas pero termina con calles caras. La ruta mejor es un desvío
+// menos obvio. Así, quien solo mira el dibujo se equivoca.
+function ponerTrampa(m, semilla) {
+  const azar = crearAzar(semilla);
+  const clave = function (u, v) { return u < v ? u + '|' + v : v + '|' + u; };
+
+  // Dijkstra sencillo: costo(calle) = lo que cuesta cruzar esa calle (Infinity = prohibida)
+  function mejorRuta(costo) {
+    const dist = {}, prev = {}, listos = {};
+    const ids = Object.keys(m.nodos);
+    ids.forEach(function (id) { dist[id] = Infinity; prev[id] = null; });
+    dist[m.origen] = 0;
+    while (true) {
+      let a = null;
+      ids.forEach(function (id) { if (!listos[id] && dist[id] < Infinity && (a === null || dist[id] < dist[a])) a = id; });
+      if (a === null) break;
+      listos[a] = true;
+      m.calles.forEach(function (c) {
+        const otro = c[0] === a ? c[1] : c[1] === a ? c[0] : null;
+        if (otro === null) return;
+        const nuevo = dist[a] + costo(c);
+        if (nuevo < dist[otro]) { dist[otro] = nuevo; prev[otro] = a; }
+      });
+    }
+    const camino = [];
+    if (dist[m.destino] < Infinity) for (let n = m.destino; n; n = prev[n]) camino.unshift(n);
+    return { camino: camino, total: dist[m.destino] };
+  }
+  const largoEnDibujo = function (c) {
+    return Math.hypot(m.nodos[c[0]].x - m.nodos[c[1]].x, m.nodos[c[0]].y - m.nodos[c[1]].y);
+  };
+  const costoDe = function (camino, pesoDe) {
+    let t = 0;
+    for (let i = 1; i < camino.length; i++) t += pesoDe(camino[i - 1], camino[i]);
+    return t;
+  };
+  const peso = {};
+  m.calles.forEach(function (c) { peso[clave(c[0], c[1])] = c; });
+
+  // 1. La ruta "obvia": la más corta mirando solo el dibujo
+  const obvia = mejorRuta(largoEnDibujo).camino;
+  if (obvia.length < 4) return m;
+  const mitad = Math.floor((obvia.length - 1) / 2);
+
+  // 2. Calles baratas al principio (señuelo) y caras al final
+  const tardias = {};
+  for (let i = 1; i < obvia.length; i++) {
+    const calle = peso[clave(obvia[i - 1], obvia[i])];
+    if (i - 1 < mitad) calle[2] = 2;
+    else { calle[2] = 8 + Math.floor(azar() * 2); tardias[clave(obvia[i - 1], obvia[i])] = true; }
+  }
+
+  // 3. Un desvío que evita las calles caras y es más barato en total
+  const enObvia = {};
+  for (let i = 1; i < obvia.length; i++) enObvia[clave(obvia[i - 1], obvia[i])] = true;
+  const desvio = mejorRuta(function (c) { return tardias[clave(c[0], c[1])] ? Infinity : largoEnDibujo(c); }).camino;
+  if (desvio.length < 2) return m;
+  for (let i = 1; i < desvio.length; i++) {
+    const calle = peso[clave(desvio[i - 1], desvio[i])];
+    if (!enObvia[clave(desvio[i - 1], desvio[i])]) calle[2] = 2 + Math.floor(azar() * 2);
+  }
+
+  // 4. Comprobar: si la ruta obvia aún gana, bajar el desvío al mínimo
+  const costoCalle = function (c) { return c[2]; };
+  const pesoDeCalle = function (u, v) { return peso[clave(u, v)][2]; };
+  if (mejorRuta(costoCalle).total >= costoDe(obvia, pesoDeCalle)) {
+    for (let i = 1; i < desvio.length; i++) {
+      if (!enObvia[clave(desvio[i - 1], desvio[i])]) peso[clave(desvio[i - 1], desvio[i])][2] = 1;
+    }
+  }
+  return m;
+}
+
 // Encuesta 1: un barrio de 30 puntos con la misma forma irregular del «Barrio sencillo»,
 // pero más grande y con más calles. Nodos A, B, C... Z, AA, AB, AC, AD.
 // Origen = A (arriba a la izquierda) y destino = X.
@@ -495,7 +569,7 @@ function crearBarrio30(semilla) {
 
   // Calles extra entre nodos cercanos (cruzan otras calles, pero no pasan sobre un nodo):
   // dan más caminos posibles. Cambia el 19 para tener más o menos.
-  return agregarConexiones(mapaNuevo, 19, semilla + 1);
+  return ponerTrampa(agregarConexiones(mapaNuevo, 19, semilla + 1), semilla + 2);
 }
 
 const mapaEncuesta1 = crearBarrio30(31);

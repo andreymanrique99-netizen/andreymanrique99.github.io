@@ -230,11 +230,17 @@ const mapas = {
   }
 };
 
-// Cambia los números de los nodos por letras (A, B, C...)
+// Nombre en letras para el nodo número i: A... Z, AA, AB, AC...
+function nombreLetra(i) {
+  const letra = function (k) { return String.fromCharCode(65 + k); };
+  return i < 26 ? letra(i) : letra(Math.floor(i / 26) - 1) + letra(i % 26);
+}
+
+// Cambia los números de los nodos por letras (A, B, C... Z, AA, AB...)
 function usarLetras(m) {
   const letra = {}, nodos = {};
   Object.keys(m.nodos).forEach(function (id, i) {
-    letra[id] = String.fromCharCode(65 + i);
+    letra[id] = nombreLetra(i);
     nodos[letra[id]] = m.nodos[id];
   });
   m.nodos = nodos;
@@ -244,16 +250,16 @@ function usarLetras(m) {
   return m;
 }
 
-// Las ciudades generadas (la de 20 ya no está aquí: es la Encuesta 1)
+// Las ciudades generadas (ahora incluye la de 20 nodos)
 [5, 10, 20, 50, 100, 150, 200, 500, 1000, 5000, 10000, 20000].forEach(function (n, posicion) {
-  if (n === 20) return;
   mapas['ciudad' + n] = crearCiudad(n, 7 + posicion * 13);
 });
 
-// Encuesta 1: el mapa de 20 puntos, con letras en vez de números
-const mapaEncuesta1 = usarLetras(crearCiudad(20, 7 + 2 * 13));
+// Encuesta 1: un mapa nuevo de 30 puntos, con letras en vez de números
+// (es distinto de la ciudad de 20 nodos que está en la lista).
+// Origen = A (primer nodo) y destino = AD (último nodo), en la otra punta del mapa.
+const mapaEncuesta1 = usarLetras(crearCiudad(30, 101));
 mapaEncuesta1.titulo = 'Encuesta 1';
-mapaEncuesta1.destino = 'S'; // En la encuesta, el destino será el nodo S.
 mapas.encuesta1 = mapaEncuesta1;
 
 
@@ -845,7 +851,7 @@ btnAuto.addEventListener('click', function () {
 // 7. ENCUESTA (guarda el nombre en el servidor; una sola vez por persona)
 //    El entorno normal muestra todos los mapas menos el de la encuesta.
 //    El botón «Encuesta» (debajo del mapa) pide el nombre y abre el mapa
-//    de 20 nodos con letras A, B, C...
+//    de 30 nodos con letras A, B, C... (después de Z: AA, AB, AC, AD).
 // ---------------------------------------------------------------------
 let enEncuesta = false;
 let nombreParticipante = '';
